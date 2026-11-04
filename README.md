@@ -87,7 +87,7 @@ Stored in `~/.local/state/bloom/settings.json`:
 
 ## Reduced motion
 
-Bloom follows Omarchy's own switch (`omarchy toggle animations off`, i.e. Hyprland animations disabled; the shell exposes it as `Style.reduceMotion`). When it is on, every animation duration is 0, there is no unfold stagger, overshoot, or pointer drift, and opening or closing is a single 80 ms fade. `status` reports it as `reducedMotion`. There is no Bloom-specific setting.
+Bloom follows Omarchy's own switch (`omarchy toggle animations off`, i.e. Hyprland animations disabled; the shell exposes it as `Style.reduceMotion`). When it is on, every animation duration is 0, there is no unfold stagger, overshoot, or pointer drift, and opening or closing is a single 80 ms fade. Chips, bands and the settings card fade for 90 ms instead of popping. `status` reports it as `reducedMotion`. There is no Bloom-specific setting.
 
 ## Removal
 
