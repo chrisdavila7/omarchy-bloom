@@ -39,18 +39,43 @@ Item {
         width: size; height: size
         visible: srcA !== "" || srcB !== ""
         layer.enabled: visible
-        layer.effect: MultiEffect { saturation: -1.0 }
+        // grayscale + a radial feather: the icon's own tile (square / rounded square background) fades to nothing at its
+        // edge, so the mark reads as a soft emblem on the glass rather than a tile
+        layer.effect: MultiEffect { saturation: -1.0; maskEnabled: true; maskSource: featherMask; maskThresholdMin: 0.0; maskSpreadAtMin: 0.0 }
+        Item {
+            id: featherMask
+            anchors.fill: parent; visible: false; layer.enabled: true
+            Shape {
+                anchors.fill: parent
+                preferredRendererType: Shape.CurveRenderer
+                ShapePath {
+                    strokeWidth: -1
+                    fillGradient: RadialGradient {
+                        centerX: am.size / 2; centerY: am.size / 2; focalX: centerX; focalY: centerY
+                        centerRadius: am.size / 2
+                        GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 1) }
+                        GradientStop { position: 0.34; color: Qt.rgba(1, 1, 1, 1) }
+                        GradientStop { position: 0.46; color: Qt.rgba(1, 1, 1, 0.70) }
+                        GradientStop { position: 0.56; color: Qt.rgba(1, 1, 1, 0.32) }
+                        GradientStop { position: 0.64; color: Qt.rgba(1, 1, 1, 0.10) }
+                        GradientStop { position: 0.72; color: Qt.rgba(1, 1, 1, 0) }
+                        GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0) }
+                    }
+                    PathSvg { path: "M0 0 H" + am.size + " V" + am.size + " H0 Z" }
+                }
+            }
+        }
         Image {
             anchors.fill: parent; fillMode: Image.PreserveAspectFit; smooth: true; asynchronous: true
             sourceSize: Qt.size(am.size * 2, am.size * 2); source: am.srcA
             opacity: am.useA && am.srcA !== "" ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: am.fadeMs; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: root.dur(am.fadeMs); easing.type: Easing.OutCubic } }
         }
         Image {
             anchors.fill: parent; fillMode: Image.PreserveAspectFit; smooth: true; asynchronous: true
             sourceSize: Qt.size(am.size * 2, am.size * 2); source: am.srcB
             opacity: !am.useA && am.srcB !== "" ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: am.fadeMs; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: root.dur(am.fadeMs); easing.type: Easing.OutCubic } }
         }
     }
 
@@ -79,11 +104,11 @@ Item {
                 property real a0: ta0
                 property real a1: ta1
                 property real rr: tr
-                Behavior on a0 { enabled: ra.live && rs.armed; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                Behavior on a1 { enabled: ra.live && rs.armed; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                Behavior on rr { enabled: ra.live && rs.armed; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                Behavior on a0 { enabled: ra.live && rs.armed; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
+                Behavior on a1 { enabled: ra.live && rs.armed; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
+                Behavior on rr { enabled: ra.live && rs.armed; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
                 property real rowK: row ? 1 : 0           // a row the petal no longer needs fades on its own
-                Behavior on rowK { NumberAnimation { duration: ra.th ? ra.th.chipFallMs : 120; easing.type: Easing.InCubic } }
+                Behavior on rowK { NumberAnimation { duration: root.dur(ra.th ? ra.th.chipFallMs : 120); easing.type: Easing.InCubic } }
                 readonly property real pp: Math.max(0, Math.min(1, ra.p))
                 readonly property real sc: ra.th ? ra.th.chipSpawnScale + (1 - ra.th.chipSpawnScale) * pp : 1
                 readonly property real b: ra.th ? ra.th.boundary : 0
@@ -136,11 +161,11 @@ Item {
                 property real yy: ty
                 property real xa: tx0
                 property real xb: tx1
-                Behavior on yy { enabled: rr.live && rb.armed; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                Behavior on xa { enabled: rr.live && rb.armed; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                Behavior on xb { enabled: rr.live && rb.armed; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                Behavior on yy { enabled: rr.live && rb.armed; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
+                Behavior on xa { enabled: rr.live && rb.armed; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
+                Behavior on xb { enabled: rr.live && rb.armed; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
                 property real rowK: row ? 1 : 0
-                Behavior on rowK { NumberAnimation { duration: rr.th ? rr.th.chipFallMs : 120; easing.type: Easing.InCubic } }
+                Behavior on rowK { NumberAnimation { duration: root.dur(rr.th ? rr.th.chipFallMs : 120); easing.type: Easing.InCubic } }
                 readonly property real pp: Math.max(0, Math.min(1, rr.p))
                 readonly property real sc: rr.th ? rr.th.chipSpawnScale + (1 - rr.th.chipSpawnScale) * pp : 1
                 readonly property real cy: rr.spawnY + (yy - rr.spawnY) * pp
@@ -162,6 +187,11 @@ Item {
     // Every size, colour and duration lives here.
     readonly property QtObject theme: QtObject {
         // geometry (logical px)
+        // Reduced motion: Omarchy's own switch (Host.Style.reduceMotion = Hyprland animations off). Every animation
+        // duration goes through root.dur() (0 when reduced); open/close become one short fade, with no unfold stagger,
+        // overshoot or pointer drift.
+        readonly property bool reduced: Host.Style.reduceMotion === true
+        readonly property int reducedFadeMs: 80
         readonly property real hubR: 22
         readonly property real innerR: 40
         readonly property real outerR: 92
@@ -176,7 +206,12 @@ Item {
         // recessed well (visual only; hit-testing uses hubR / aimDeadZone). Its radius is the petals' inner
         // radius (innerR * ring scale) minus wellGap, so it keeps the same hairline from the petals at any scale.
         readonly property real wellGap: 2          // px between the well rim and the petals' inner edge (= gap)
-        readonly property real wellFillAlpha: 0.08 // near-transparent dark fill (below blur ignore_alpha)
+        readonly property real wellFillAlpha: 0.22 // faint fill; kept above the blur ignore_alpha (0.2) so the well frosts like the glass
+        readonly property color wellFillColor: "#6a6a6a" // lighter than the smoked glass: the well reads airy/emptier than the petals, the inner shadow keeps it recessed
+        // glass seams: the hairline gaps (2 px) are filled with this near-black so they are blurred (alpha > ignore_alpha) and
+        // read as deliberate glass seams over any wallpaper, instead of bright unblurred cracks
+        readonly property real seamAlpha: 0.38
+        readonly property real seamBleed: 0.4      // px the seam wedge overlaps the petal's arcs, so even-odd edges never coincide (no dotted fringe)
         readonly property real wellShadowAlpha: 0.50 // inner shadow darkness at the upper rim
         readonly property real wellShadowStart: 0.50 // radial position where the shadow begins (0..1)
         readonly property real wellShadowOffsetK: 0.14 // shadow gradient centre sits this fraction of the well radius below the centre (light from above)
@@ -187,7 +222,7 @@ Item {
         readonly property real chipMaxSpanDeg: 150 // widest fan of one arc; more chips overflow onto the next arc outward
         readonly property real chipRowStep: 44     // radial step of overflow arcs
         readonly property real railWidth: chipSize + 6 // curved glass band thickness
-        readonly property real driftMax: 3
+        readonly property real driftMax: reduced ? 0 : 3
         readonly property real driftGain: 0.04
         readonly property real driftSpring: 0.4    // heavy, slow follow
         readonly property real driftDamping: 0.4
@@ -204,7 +239,7 @@ Item {
         readonly property color neutralAccent: "#e4e8ed"
         // accent + glass crossfade when the Theme setting flips
         property color accent: matchTheme ? themeAccentLegible : neutralAccent
-        Behavior on accent { ColorAnimation { duration: root.theme.themeMs; easing.type: Easing.OutCubic } }
+        Behavior on accent { ColorAnimation { duration: root.dur(root.theme.themeMs); easing.type: Easing.OutCubic } }
         readonly property color text: "#e4e8ed"
         // smoked-glass base: dark enough to read as glass, light enough to stay legible in both themes
         readonly property color glassBase: "#343434"
@@ -212,7 +247,7 @@ Item {
         property color glass: matchTheme
             ? Qt.rgba(glassBase.r + (themeAccentLegible.r - glassBase.r) * glassTintMix, glassBase.g + (themeAccentLegible.g - glassBase.g) * glassTintMix, glassBase.b + (themeAccentLegible.b - glassBase.b) * glassTintMix, 1)
             : glassBase
-        Behavior on glass { ColorAnimation { duration: root.theme.themeMs; easing.type: Easing.OutCubic } }
+        Behavior on glass { ColorAnimation { duration: root.dur(root.theme.themeMs); easing.type: Easing.OutCubic } }
         readonly property int themeMs: 180         // Theme setting colour crossfade, OutCubic
         readonly property color errorText: "#e08a84"   // error red (reserved; no error toast yet)
         readonly property real glassOccupied: 0.66
@@ -258,9 +293,9 @@ Item {
         readonly property int labelPx: 11
         // motion (ms)
         readonly property real overshoot: 1.2      // easeOutBack s ~ 1.05 peak
-        readonly property int petalMs: 120
-        readonly property int stagger: 12
-        readonly property int closeMs: 120
+        readonly property int petalMs: reduced ? reducedFadeMs : 120
+        readonly property int stagger: reduced ? 0 : 12
+        readonly property int closeMs: reduced ? reducedFadeMs : 120
         readonly property int hoverMs: 100
         readonly property int pressMs: 70
         readonly property int aimMs: 160
@@ -288,7 +323,7 @@ Item {
         readonly property real colRadius: 12       // outer corners of each group
         readonly property real colInnerRadius: 3   // corners between neighbouring slots
         readonly property real colOvershoot: 0.5   // restrained easeOutBack (bloom: overshoot)
-        readonly property int colStagger: 14       // ms per slot away from the current one
+        readonly property int colStagger: reduced ? 0 : 14       // ms per slot away from the current one
         readonly property int colNumberPx: 17
         readonly property int colGlyphPx: 18
         readonly property real colPress: 0.97      // label scale while pressed
@@ -300,7 +335,7 @@ Item {
         readonly property int chipMaxCols: 8       // widest chip row
         readonly property real bandPad: 3          // glass band overhang beyond the outer chips
         // icon font + layout glyphs (Nerd Font code points); family = the shell's Style.fontFamily (fontconfig "monospace")
-        readonly property string iconFont: Host.Style.fontFamily || "monospace"
+        readonly property string iconFont: root.glyphFamily
         readonly property string glyphDwindle: "\u{f14fb}"
         readonly property string glyphScrolling: "\u{f0765}"
         readonly property string glyphFloating: "\u{f0536}"
@@ -310,7 +345,8 @@ Item {
         readonly property real cardPad: 8
         readonly property real cardRowGap: 4       // between settings rows
         readonly property real cardRadius: 12
-        readonly property real cardGap: 10         // bloom: gap between the Settings petal's outer edge and the card
+        readonly property real cardGap: 10         // gap between the Settings item (petal outer edge / slot edge) and the card
+        readonly property real cardMargin: 12      // card stays this far inside the screen
         readonly property real cardAlpha: 0.86
         readonly property real cardScale0: 0.96    // scale it grows from
         readonly property int cardInMs: 160        // OutCubic
@@ -331,6 +367,28 @@ Item {
     }
     readonly property QtObject th: theme
     FontLoader { id: interFont; source: Qt.resolvedUrl("assets/fonts/Inter-Variable.ttf") }
+
+    // ---- glyph font. Omarchy's bar draws the layout glyphs (U+F14FB / U+F0765 / U+F0536) and Bloom the gear (U+F0493) in
+    // Style.fontFamily, the fontconfig "monospace" alias, which only reaches a Nerd Font through fallback. Bloom asks
+    // fontconfig once which installed families really contain all four code points and draws them in that family
+    // (the shell's own family first when it qualifies). If none qualifies (no Nerd Font installed) the current slot
+    // shows its number plus the accent tick, and the gear a plain symbol, instead of a missing-glyph box.
+    property string glyphFamily: Host.Style.fontFamily || "monospace"
+    property bool glyphOk: true            // stays true until fontconfig answered with an empty list
+    function pickGlyphFont(text) {
+        const fams = String(text || "").split("\n").map(x => x.trim()).filter(x => x.length > 0)
+        if (fams.length === 0) { glyphOk = false; return }
+        const own = [Host.Style.fontFamily, Host.Style.resolvedFontFamily]
+        let pick = fams.find(f => own.includes(f)) || fams.find(f => /nerd/i.test(f)) || fams[0]
+        glyphFamily = pick; glyphOk = true
+    }
+    Connections { target: Host.Style; function onResolvedFontFamilyChanged() { glyphProc.running = true } }
+    Process {
+        id: glyphProc
+        command: ["fc-list", "-f", "%{family[0]}\\n", ":charset=f14fb f0765 f0536 f0493"]
+        stdout: StdioCollector { id: glyphOut }
+        onExited: function (code) { if (code === 0) root.pickGlyphFont(glyphOut.text) }
+    }
 
     // ------------------------------------------------------------ layout setting
     // Settings, persisted in ~/.local/state/bloom/settings.json as {"layout": "bloom"|"vertical", "theme": "neutral"|"omarchy"}.
@@ -362,7 +420,7 @@ Item {
     // ---- morph: vK = how vertical the drawn switcher is (0 bloom .. 1 vertical), animated; lm flips at the start
     property real vK: 0
     property bool morphing: false
-    NumberAnimation { id: morphAnim; target: root; property: "vK"; duration: root.th.morphMs; easing.type: Easing.OutCubic
+    NumberAnimation { id: morphAnim; target: root; property: "vK"; duration: root.dur(root.th.morphMs); easing.type: Easing.OutCubic
         onFinished: { root.morphing = false; if (root.shown && root.active && root.lm !== root.layoutMode) root.requestMorph() } }
     Timer { id: morphTimer; interval: th.morphWaitMs; onTriggered: root.startMorph() }
     function requestMorph() {
@@ -396,7 +454,7 @@ Item {
             try { const o = JSON.parse(text()); if (root.validTheme(o.theme)) root.themeMode = o.theme; if (root.validLayout(o.layout)) { root.layoutMode = o.layout; root.applyLayout() } } catch (e) { console.warn("Bloom: settings.json: " + e) }
         }
     }
-    Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.settingsDir])
+    Component.onCompleted: { Quickshell.execDetached(["mkdir", "-p", root.settingsDir]); glyphProc.running = true }
     Component.onDestruction: if (settingsTimer.running) { settingsTimer.stop(); writeSettings() }
 
     // ------------------------------------------------------------------ state
@@ -406,7 +464,7 @@ Item {
     property bool active: false          // open target (false while folding)
     property bool pending: false
     property real clock: 0               // animation clock in ms; drives every unfold
-    readonly property real clockTotal: vert ? Math.max(colDistance(0), colDistance(itemCount - 1)) * th.colStagger + th.petalMs : (count - 1) * th.stagger + th.petalMs
+    readonly property real clockTotal: th.reduced ? th.reducedFadeMs : vert ? Math.max(colDistance(0), colDistance(itemCount - 1)) * th.colStagger + th.petalMs : (count - 1) * th.stagger + th.petalMs
     property var targetScreen: null
     property string monitorName: ""
     property real hx: 0
@@ -442,6 +500,7 @@ Item {
     FrameAnimation {
         running: root.shown && Math.abs(G.wrap(root.aimRaw - root.aimAngle)) > 0.0005
         onTriggered: {
+            if (root.th.reduced) { root.aimAngle = root.aimRaw; return }
             const d = G.wrap(root.aimRaw - root.aimAngle)
             const dt = Math.min(frameTime, 0.05)
             const maxStep = root.th.aimMaxDegPerSec * Math.PI / 180 * dt
@@ -490,7 +549,7 @@ Item {
     }
     readonly property var colLay: CG.column(hx, hy, itemCount, anchorIdx, sw, sh, th, colBreaks)
     property real rimY: 0               // smoothed pointer y driving the vertical rim catch
-    Behavior on rimY { NumberAnimation { duration: th.aimMs; easing.type: Easing.OutCubic } }
+    Behavior on rimY { NumberAnimation { duration: root.dur(th.aimMs); easing.type: Easing.OutCubic } }
     readonly property real vigX: hx + (colLay.x + colLay.width / 2 - hx) * vK
     readonly property real vigY: hy + (colLay.y + colLay.height / 2 - hy) * vK
     // layout glyph of the current workspace, read natively (files under ~/.local/state/omarchy/workspace-layouts)
@@ -517,12 +576,16 @@ Item {
         onLoadFailed: { root.defFileMode = ""; root.defFileExists = false }
     }
     function reloadModes() { wsModeFile.reload(); defModeFile.reload() }
+    // reduced motion: the unfold collapses to one short fade (prog stays 1, opacity follows the clock)
+    function dur(ms) { return th.reduced ? 0 : ms }
+    function openFade(prog, k) { return th.reduced ? Math.max(0, Math.min(1, clock / Math.max(1, clockTotal))) : Math.max(0, Math.min(1, prog * k)) }
     function easeOutBack(t, ov) { const s = ov === undefined ? th.overshoot : ov; t = t - 1; return 1 + (s + 1) * t * t * t + s * t * t }
     function colDistance(i) {
         const c = CG.itemCenter(colLay, i)
         return c ? Math.abs(c.y - (colLay.y + colLay.height / 2)) / (th.slotSize + th.slotGap) : 0
     }
     function petalProg(i, clk) {
+        if (th.reduced) return 1
         if (vert) {   // column: slots unfold outward from the rail center
             const tv = Math.max(0, Math.min(1, (clk - colDistance(i) * th.colStagger) / th.petalMs))
             return active ? easeOutBack(tv, th.colOvershoot) : tv * tv * (3 - 2 * tv)
@@ -854,7 +917,7 @@ Item {
     // ---- settings card
     property bool settingsOpen: false
     property real settingsK: settingsOpen ? 1 : 0
-    Behavior on settingsK { NumberAnimation { duration: root.settingsOpen ? root.th.cardInMs : root.th.cardOutMs; easing.type: root.settingsOpen ? Easing.OutCubic : Easing.InCubic } }
+    Behavior on settingsK { NumberAnimation { duration: root.dur(root.settingsOpen ? root.th.cardInMs : root.th.cardOutMs); easing.type: root.settingsOpen ? Easing.OutCubic : Easing.InCubic } }
     function openSettings() {
         if (!shown || !active || settingsOpen) return
         hovered = -1; pressedIdx = -1; dragAddr = ""; dragWin = null
@@ -984,7 +1047,7 @@ Item {
         function toggle(): void { root.toggle() }
         function layout(name: string): string { return root.setLayout(name) ? root.layoutMode : "error: layout must be bloom or vertical" }
         function theme(name: string): string { return root.setTheme(name) ? root.themeMode : "error: theme must be neutral or omarchy" }
-        function status(): string { return JSON.stringify({open: root.shown && root.active, shown: root.shown, pending: root.pending, layout: root.layoutMode, theme: root.themeMode}) }
+        function status(): string { return JSON.stringify({open: root.shown && root.active, shown: root.shown, pending: root.pending, layout: root.layoutMode, theme: root.themeMode, reducedMotion: root.th.reduced}) }
     }
     Process {
         id: cursorProc
@@ -1022,9 +1085,9 @@ Item {
         onTriggered: { const m = Hyprland.monitors.values.find(x => x.name === root.monitorName); if (m && root.currentOf(m) !== root.verifyWs) root.toast("Couldn't switch to workspace " + root.verifyWs) } }
     ParallelAnimation {
         id: flyAnim
-        NumberAnimation { id: flyX; target: root; property: "gx"; duration: th.flyMs; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
-        NumberAnimation { id: flyY; target: root; property: "gy"; duration: th.flyMs; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
-        NumberAnimation { id: flyFade; target: root; property: "fadeGhost"; duration: th.flyMs; easing.type: Easing.InQuad }
+        NumberAnimation { id: flyX; target: root; property: "gx"; duration: root.dur(th.flyMs); easing.type: Easing.OutBack; easing.overshoot: 1.4 }
+        NumberAnimation { id: flyY; target: root; property: "gy"; duration: root.dur(th.flyMs); easing.type: Easing.OutBack; easing.overshoot: 1.4 }
+        NumberAnimation { id: flyFade; target: root; property: "fadeGhost"; duration: root.dur(th.flyMs); easing.type: Easing.InQuad }
         onFinished: { root.flying = false; root.dragAddr = ""; root.dragWin = null; root.fadeGhost = 1; root.syncChips() }
     }
 
@@ -1085,7 +1148,7 @@ Item {
             x: root.hx + root.driftX
             y: root.hy + root.driftY
             visible: root.vK < 0.999
-            readonly property real hubProg: root.active ? root.easeOutBack(Math.min(1, root.clock / root.th.petalMs)) : Math.min(1, root.clock / root.th.petalMs)
+            readonly property real hubProg: root.th.reduced ? 1 : root.active ? root.easeOutBack(Math.min(1, root.clock / root.th.petalMs)) : Math.min(1, root.clock / root.th.petalMs)
 
             // petals
             Repeater {
@@ -1108,19 +1171,21 @@ Item {
                     property real drop: (!settings && root.dragging && isHover && wid !== root.dragSrcWs) ? 1 : 0
                     property real pul: root.pulse === index ? 1 : 0
                     property real rim: isHover ? 1 : 0
-                    Behavior on hov { NumberAnimation { duration: root.th.hoverMs; easing.type: Easing.OutCubic } }
-                    Behavior on rim { NumberAnimation { duration: pet.isHover ? root.th.rimCatchInMs : root.th.rimCatchOutMs; easing.type: pet.isHover ? Easing.OutCubic : Easing.InCubic } }
-                    Behavior on cur { NumberAnimation { duration: root.th.hoverMs * 2; easing.type: Easing.OutCubic } }
-                    Behavior on occ { NumberAnimation { duration: root.th.hoverMs * 2 } }
-                    Behavior on press { NumberAnimation { duration: root.th.pressMs; easing.type: Easing.OutCubic } }
-                    Behavior on drop { NumberAnimation { duration: root.th.hoverMs; easing.type: Easing.OutCubic } }
-                    Behavior on pul { NumberAnimation { duration: root.th.pulseMs; easing.type: Easing.OutCubic } }
+                    Behavior on hov { NumberAnimation { duration: root.dur(root.th.hoverMs); easing.type: Easing.OutCubic } }
+                    Behavior on rim { NumberAnimation { duration: root.dur(pet.isHover ? root.th.rimCatchInMs : root.th.rimCatchOutMs); easing.type: pet.isHover ? Easing.OutCubic : Easing.InCubic } }
+                    Behavior on cur { NumberAnimation { duration: root.dur(root.th.hoverMs * 2); easing.type: Easing.OutCubic } }
+                    Behavior on occ { NumberAnimation { duration: root.dur(root.th.hoverMs * 2) } }
+                    Behavior on press { NumberAnimation { duration: root.dur(root.th.pressMs); easing.type: Easing.OutCubic } }
+                    Behavior on drop { NumberAnimation { duration: root.dur(root.th.hoverMs); easing.type: Easing.OutCubic } }
+                    Behavior on pul { NumberAnimation { duration: root.dur(root.th.pulseMs); easing.type: Easing.OutCubic } }
                     readonly property real p: Math.min(prog, 1.1)
                     readonly property real rIn: root.th.hubR * 0.9 + (g.ri + press * 1.5 - root.th.hubR * 0.9) * p
                     readonly property real rOut: root.th.hubR + (g.ro + root.th.hoverGrow * hov + pul * 4 - press * 3 - root.th.hubR) * p
                     readonly property real half: root.th.gap / 2
                     readonly property real s0: rIn / Math.max(rOut, 1)   // inner radius as a fraction of the outer (depth-light gradient)
                     readonly property string d: G.petalPath(root.th.boundary, root.th.boundary, rIn, rOut, g.a0, g.a1, root.th.gap, root.th.corner)
+                    // the full wedge (no gap) minus the petal = the petal's half of the seam on each side
+                    readonly property string seam: d === "" ? "" : G.seamPath(root.th.boundary, root.th.boundary, rIn - root.th.seamBleed, rOut + root.th.seamBleed, g.a0, g.a1, root.th.corner + half) + " " + d
                     readonly property string edge: G.arcPath(root.th.boundary, root.th.boundary, rOut - 0.6, g.a0 + (half + root.th.corner + 1) / rOut, g.a1 - (half + root.th.corner + 1) / rOut)
                     // rim catch: lit band just inside the outer edge, clamped to the petal's straight span
                     readonly property real rimMargin: (half + root.th.corner + 1) / Math.max(rOut, 1)
@@ -1143,12 +1208,18 @@ Item {
                     x: (csl.x - root.hx - cpx) * root.vK
                     y: (csl.y - root.hy - cpy) * root.vK
                     transform: Scale { origin.x: pet.cpx; origin.y: pet.cpy; xScale: root.th.morphScale + (1 - root.th.morphScale) * (1 - root.vK); yScale: xScale }
-                    opacity: Math.max(0, Math.min(1, prog * 1.5)) * (1 - root.vK)
+                    opacity: root.openFade(prog, 1.5) * (1 - root.vK)
 
                     Shape {
                         x: -root.th.boundary; y: -root.th.boundary
                         width: root.th.boundary * 2; height: root.th.boundary * 2
                         preferredRendererType: Shape.CurveRenderer
+                        // glass seam (the hairline gaps between petals), blurred like the glass
+                        ShapePath {
+                            strokeWidth: -1; fillRule: ShapePath.OddEvenFill
+                            fillColor: Qt.rgba(0, 0, 0, root.th.seamAlpha)
+                            PathSvg { path: pet.seam }
+                        }
                         // smoked glass body
                         ShapePath {
                             strokeWidth: -1
@@ -1270,13 +1341,13 @@ Item {
                         scale: (1 + 0.28 * pet.hov) * (1 - 0.06 * pet.press)
                         Text {
                             anchors.centerIn: parent; anchors.verticalCenterOffset: 1
-                            text: pet.settings ? root.th.glyphGear : String(pet.wid)
+                            text: pet.settings ? (root.glyphOk ? root.th.glyphGear : "\u2699\ufe0e") : String(pet.wid)
                             color: Qt.rgba(0, 0, 0, 0.5); font.family: pet.settings ? root.th.iconFont : root.th.font; font.pixelSize: pet.settings ? root.th.settingsGlyphPx : root.th.numberPx; font.weight: Font.Medium
                             font.features: ({ "tnum": 1 }); textFormat: Text.PlainText
                         }
                         Text {
                             anchors.centerIn: parent
-                            text: pet.settings ? root.th.glyphGear : String(pet.wid)
+                            text: pet.settings ? (root.glyphOk ? root.th.glyphGear : "\u2699\ufe0e") : String(pet.wid)
                             color: root.th.text; opacity: pet.settings ? 0.85 + 0.15 * pet.hov : 0.55 + 0.45 * pet.occ + 0.2 * pet.hov
                             font.family: pet.settings ? root.th.iconFont : root.th.font; font.pixelSize: pet.settings ? root.th.settingsGlyphPx : root.th.numberPx; font.weight: Font.Medium
                             font.features: ({ "tnum": 1 }); textFormat: Text.PlainText
@@ -1308,12 +1379,12 @@ Item {
                 readonly property real sa: root.th.wellShadowAlpha
                 readonly property string circ: "M0 " + r + " A" + r + " " + r + " 0 1 1 " + d + " " + r + " A" + r + " " + r + " 0 1 1 0 " + r
                 x: -r; y: -r; width: d; height: d
-                opacity: Math.min(1, bloom.hubProg) * (1 - root.vK)
+                opacity: root.openFade(bloom.hubProg, 1) * (1 - root.vK)
                 Shape {
                     anchors.fill: parent
                     preferredRendererType: Shape.CurveRenderer
                     ShapePath {
-                        strokeWidth: -1; fillColor: Qt.rgba(0, 0, 0, root.th.wellFillAlpha)
+                        strokeWidth: -1; fillColor: Qt.rgba(root.th.wellFillColor.r, root.th.wellFillColor.g, root.th.wellFillColor.b, root.th.wellFillAlpha)
                         PathSvg { path: well.circ }
                     }
                     // inner shadow: gradient centre pushed down, so the upper rim is darkest; quadratic
@@ -1348,6 +1419,20 @@ Item {
                         PathSvg { path: well.circ }
                     }
                 }
+                // the hairline between the well and the petals: same near-black seam as between petals
+                Shape {
+                    id: wellSeam
+                    readonly property real g: root.th.wellGap
+                    readonly property real rr: well.r + g
+                    x: -g; y: -g; width: well.d + 2 * g; height: well.d + 2 * g
+                    preferredRendererType: Shape.CurveRenderer
+                    ShapePath {
+                        strokeWidth: -1; fillRule: ShapePath.OddEvenFill
+                        fillColor: Qt.rgba(0, 0, 0, root.th.seamAlpha)
+                        PathSvg { path: "M0 " + wellSeam.rr + " A" + wellSeam.rr + " " + wellSeam.rr + " 0 1 1 " + 2 * wellSeam.rr + " " + wellSeam.rr + " A" + wellSeam.rr + " " + wellSeam.rr + " 0 1 1 0 " + wellSeam.rr
+                                       + " M" + (wellSeam.g + 0.5) + " " + wellSeam.rr + " A" + (well.r - 0.5) + " " + (well.r - 0.5) + " 0 1 1 " + (wellSeam.g + well.d - 0.5) + " " + wellSeam.rr + " A" + (well.r - 0.5) + " " + (well.r - 0.5) + " 0 1 1 " + (wellSeam.g + 0.5) + " " + wellSeam.rr }
+                    }
+                }
             }
 
         }
@@ -1377,14 +1462,14 @@ Item {
                     property real drop: (!special && root.dragging && isHover && wid !== root.dragSrcWs) ? 1 : 0
                     property real pul: root.pulse === index ? 1 : 0
                     property real rim: isHover ? 1 : 0
-                    Behavior on hov { NumberAnimation { duration: root.th.hoverMs; easing.type: Easing.OutCubic } }
-                    Behavior on rim { NumberAnimation { duration: sl.isHover ? root.th.rimCatchInMs : root.th.rimCatchOutMs; easing.type: sl.isHover ? Easing.OutCubic : Easing.InCubic } }
-                    Behavior on cur { NumberAnimation { duration: root.th.hoverMs * 2; easing.type: Easing.OutCubic } }
-                    Behavior on occ { NumberAnimation { duration: root.th.hoverMs * 2 } }
-                    Behavior on emp { NumberAnimation { duration: root.th.colEmptyMs; easing.type: Easing.OutCubic } }
-                    Behavior on press { NumberAnimation { duration: root.th.colPressMs; easing.type: Easing.OutCubic } }
-                    Behavior on drop { NumberAnimation { duration: root.th.hoverMs; easing.type: Easing.OutCubic } }
-                    Behavior on pul { NumberAnimation { duration: root.th.pulseMs; easing.type: Easing.OutCubic } }
+                    Behavior on hov { NumberAnimation { duration: root.dur(root.th.hoverMs); easing.type: Easing.OutCubic } }
+                    Behavior on rim { NumberAnimation { duration: root.dur(sl.isHover ? root.th.rimCatchInMs : root.th.rimCatchOutMs); easing.type: sl.isHover ? Easing.OutCubic : Easing.InCubic } }
+                    Behavior on cur { NumberAnimation { duration: root.dur(root.th.hoverMs * 2); easing.type: Easing.OutCubic } }
+                    Behavior on occ { NumberAnimation { duration: root.dur(root.th.hoverMs * 2) } }
+                    Behavior on emp { NumberAnimation { duration: root.dur(root.th.colEmptyMs); easing.type: Easing.OutCubic } }
+                    Behavior on press { NumberAnimation { duration: root.dur(root.th.colPressMs); easing.type: Easing.OutCubic } }
+                    Behavior on drop { NumberAnimation { duration: root.dur(root.th.hoverMs); easing.type: Easing.OutCubic } }
+                    Behavior on pul { NumberAnimation { duration: root.dur(root.th.pulseMs); easing.type: Easing.OutCubic } }
                     readonly property var rc: CG.slotRect(root.colLay, index, root.th)
                     readonly property real centerY: root.colLay.y + root.colLay.height / 2
                     readonly property real p: Math.min(prog, 1.1)
@@ -1403,9 +1488,21 @@ Item {
                     x: rc.x - (lw ? widen : 0) + mdx; width: rc.w + widen
                     y: centerY - rc.h / 2 + (rc.y + rc.h / 2 - centerY) * p + mdy; height: rc.h
                     transform: Scale { origin.x: sl.width / 2; origin.y: sl.height / 2; xScale: root.th.morphScale + (1 - root.th.morphScale) * root.vK; yScale: xScale }
-                    opacity: Math.max(0, Math.min(1, prog * 1.5)) * root.vK
+                    opacity: root.openFade(prog, 1.5) * root.vK
                     z: hov > 0.01 ? 2 : 0
 
+                    // glass seam in the hairline gap above this slot (same near-black as the bloom's seams)
+                    Rectangle {
+                        visible: sl.rc.topInner
+                        x: 0; width: sl.width; y: -root.th.slotHair; height: root.th.slotHair
+                        color: Qt.rgba(0, 0, 0, root.th.seamAlpha)
+                    }
+                    // a hovered slot is wider than its lower neighbour: seam under its widened strip as well
+                    Rectangle {
+                        visible: sl.rc.botInner && sl.hov > 0.01
+                        x: sl.lw ? 0 : sl.rc.w; width: sl.widen; y: sl.height; height: root.th.slotHair
+                        color: Qt.rgba(0, 0, 0, root.th.seamAlpha)
+                    }
                     // smoked glass body
                     Rectangle {
                         anchors.fill: parent
@@ -1464,12 +1561,6 @@ Item {
                             GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, topLight.a1) }
                         }
                     }
-                    // light edge on the centre-facing side
-                    Rectangle {
-                        width: 1; height: parent.height - 10; y: 5
-                        x: sl.lw ? 0 : parent.width - 1
-                        color: root.th.edgeLight
-                    }
                     // drag target: accent outline
                     Rectangle {
                         anchors.fill: parent; color: "transparent"
@@ -1479,8 +1570,9 @@ Item {
                     // hover rim catch: white light on the centre-facing edge, brightest at the pointer
                     Rectangle {
                         id: rimBar
-                        readonly property real lo: 6
-                        readonly property real hi: Math.max(lo + 0.002, sl.height - 6)
+                        // stays on the slot's straight edge: clear of the rounded corners
+                        readonly property real lo: Math.max(6, sl.rTop)
+                        readonly property real hi: Math.max(lo + 0.002, sl.height - Math.max(6, sl.rBot))
                         readonly property real c: Math.max(lo, Math.min(hi, root.rimY - root.driftY - sl.y))
                         readonly property real span: Math.max(0.002, hi - lo)
                         readonly property real pp: (c - lo) / span
@@ -1521,8 +1613,9 @@ Item {
                         x: sl.lw ? sl.widen : 0; width: sl.rc.w; height: parent.height
                         scale: 1 - (1 - root.th.colPress) * sl.press
                         opacity: sl.special ? 0.85 + 0.15 * sl.hov : 1 - (1 - root.th.colEmptyAlpha) * sl.emp * (1 - sl.hov)
-                        readonly property bool glyph: sl.special || sl.isCurrent
-                        readonly property string txt: sl.special ? root.th.glyphGear : (sl.isCurrent ? root.modeGlyph(root.activeMode) : root.wsLabel(sl.wid))
+                        // glyph only when the font really has it; otherwise the number (the accent tick still marks the current slot)
+                        readonly property bool glyph: root.glyphOk && (sl.special || sl.isCurrent)
+                        readonly property string txt: sl.special ? (root.glyphOk ? root.th.glyphGear : "\u2699\ufe0e") : (glyph ? root.modeGlyph(root.activeMode) : root.wsLabel(sl.wid))
                         Text {
                             anchors.centerIn: parent; anchors.verticalCenterOffset: 1
                             text: parent.txt; textFormat: Text.PlainText; color: Qt.rgba(0, 0, 0, 0.5)
@@ -1564,7 +1657,7 @@ Item {
                     property real riseTarget: 0
                     p: riseTarget
                     Behavior on p {
-                        NumberAnimation { duration: root.chipsOpen ? root.th.chipRiseMs : root.th.chipFallMs; easing.type: root.chipsOpen ? Easing.OutCubic : Easing.InCubic }
+                        NumberAnimation { duration: root.dur(root.chipsOpen ? root.th.chipRiseMs : root.th.chipFallMs); easing.type: root.chipsOpen ? Easing.OutCubic : Easing.InCubic }
                     }
                     Component.onCompleted: riseTarget = Qt.binding(() => root.chipsOpen ? 1 : 0)
                 }
@@ -1584,7 +1677,7 @@ Item {
                     spawnA: pl ? pl.mid : root.baseMid(petal)
                     spawnR: pl ? pl.roH - root.th.chipSpawnInset : root.chipR0
                     p: startP
-                    NumberAnimation on p { from: lr.startP; to: 0; duration: Math.max(30, root.th.chipFallMs * lr.startP); easing.type: Easing.InCubic
+                    NumberAnimation on p { from: lr.startP; to: 0; duration: root.dur(Math.max(30, root.th.chipFallMs * lr.startP)); easing.type: Easing.InCubic
                         onFinished: Qt.callLater(() => root.dropRailLeaving(lr.uid)) }
                 }
             }
@@ -1601,7 +1694,7 @@ Item {
                     property real riseTarget: 0
                     p: riseTarget
                     Behavior on p {
-                        NumberAnimation { duration: root.chipsOpen ? root.th.chipRiseMs : root.th.chipFallMs; easing.type: root.chipsOpen ? Easing.OutCubic : Easing.InCubic }
+                        NumberAnimation { duration: root.dur(root.chipsOpen ? root.th.chipRiseMs : root.th.chipFallMs); easing.type: root.chipsOpen ? Easing.OutCubic : Easing.InCubic }
                     }
                     Component.onCompleted: riseTarget = Qt.binding(() => root.chipsOpen ? 1 : 0)
                 }
@@ -1619,7 +1712,7 @@ Item {
                     rows: JSON.parse(rows_json)
                     spawnX: vlr.spx; spawnY: vlr.spy
                     p: startP
-                    NumberAnimation on p { from: vlr.startP; to: 0; duration: Math.max(30, root.th.chipFallMs * vlr.startP); easing.type: Easing.InCubic
+                    NumberAnimation on p { from: vlr.startP; to: 0; duration: root.dur(Math.max(30, root.th.chipFallMs * vlr.startP)); easing.type: Easing.InCubic
                         onFinished: Qt.callLater(() => root.dropVRailLeaving(vlr.uid)) }
                 }
             }
@@ -1658,14 +1751,14 @@ Item {
                     readonly property real spy: root.vSpawn ? root.vSpawn.y : 0
                     property real sx: hasSlot ? slot.x : spx
                     property real sy: hasSlot ? slot.y : spy
-                    Behavior on sx { enabled: chip.armed && root.vert; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                    Behavior on sy { enabled: chip.armed && root.vert; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                    Behavior on sr { enabled: chip.armed; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                    Behavior on sa { enabled: chip.armed; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    Behavior on sx { enabled: chip.armed && root.vert; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
+                    Behavior on sy { enabled: chip.armed && root.vert; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
+                    Behavior on sr { enabled: chip.armed; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
+                    Behavior on sa { enabled: chip.armed; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
                     property real riseTarget: 0
                     property real rise: riseTarget
                     Behavior on rise {
-                        NumberAnimation { duration: root.chipsOpen ? root.th.chipRiseMs : root.th.chipFallMs; easing.type: root.chipsOpen ? Easing.OutCubic : Easing.InCubic }
+                        NumberAnimation { duration: root.dur(root.chipsOpen ? root.th.chipRiseMs : root.th.chipFallMs); easing.type: root.chipsOpen ? Easing.OutCubic : Easing.InCubic }
                     }
                     readonly property real pr: Math.max(0, Math.min(1, rise))
                     readonly property real curA: spawnA + G.wrap(sa - spawnA) * pr
@@ -1679,9 +1772,9 @@ Item {
                     readonly property bool isHover: root.hoverChip === index
                     readonly property bool ghosted: address === root.dragAddr && (root.dragging || root.flying)
                     opacity: ghosted ? (root.flying ? 0 : 0.25) : pr
-                    Behavior on opacity { enabled: chip.ghosted || root.dragging || root.flying; NumberAnimation { duration: 100 } }
+                    Behavior on opacity { enabled: chip.ghosted || root.dragging || root.flying; NumberAnimation { duration: root.dur(100) } }
                     property real hoverK: (isHover || (root.dragging && root.insIdx === index)) ? 1.14 : 1
-                    Behavior on hoverK { NumberAnimation { duration: root.th.hoverMs; easing.type: Easing.OutCubic } }
+                    Behavior on hoverK { NumberAnimation { duration: root.dur(root.th.hoverMs); easing.type: Easing.OutCubic } }
                     scale: (root.th.chipSpawnScale + (1 - root.th.chipSpawnScale) * pr) * hoverK
                     z: isHover ? 3 : 1
 
@@ -1689,25 +1782,25 @@ Item {
                         anchors.fill: parent; radius: width / 2
                         color: Qt.rgba(root.th.glass.r + 0.02, root.th.glass.g + 0.02, root.th.glass.b + 0.03, root.th.chipAlpha)
                         border.width: 1; border.color: chip.isHover ? root.th.accent : Qt.rgba(1, 1, 1, 0.22)
-                        Behavior on border.color { ColorAnimation { duration: root.th.hoverMs } }
+                        Behavior on border.color { ColorAnimation { duration: root.dur(root.th.hoverMs) } }
                     }
                     // side-by-side insertion: the target half glows
                     Item {
                         anchors.fill: parent
                         opacity: root.dragging && root.insIdx === chip.index ? 1 : 0
-                        Behavior on opacity { NumberAnimation { duration: 90 } }
+                        Behavior on opacity { NumberAnimation { duration: root.dur(90) } }
                         Rectangle {
                             width: parent.width / 2; height: parent.height
                             x: root.insSide === "l" ? 0 : width
                             radius: 6
                             color: Qt.rgba(root.th.accent.r, root.th.accent.g, root.th.accent.b, 0.8)
-                            Behavior on x { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+                            Behavior on x { NumberAnimation { duration: root.dur(90); easing.type: Easing.OutCubic } }
                         }
                         Rectangle {
                             width: 4; height: parent.height + 14; radius: 2; y: -7
                             x: root.insSide === "l" ? -7 : parent.width + 3
                             color: root.th.accent
-                            Behavior on x { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+                            Behavior on x { NumberAnimation { duration: root.dur(90); easing.type: Easing.OutCubic } }
                         }
                     }
                     property var entry: { DesktopEntries.applications.values; return DesktopEntries.heuristicLookup(chip.cls) }
@@ -1732,7 +1825,7 @@ Item {
                         border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.18)
                         opacity: chip.isHover ? 1 : 0
                         visible: opacity > 0.01
-                        Behavior on opacity { NumberAnimation { duration: root.th.hoverMs } }
+                        Behavior on opacity { NumberAnimation { duration: root.dur(root.th.hoverMs) } }
                         Text {
                             id: labelText
                             anchors.fill: parent; anchors.leftMargin: 9; anchors.rightMargin: 9
@@ -1761,7 +1854,7 @@ Item {
                     required property bool vert
                     required property real startP
                     property real p: startP
-                    NumberAnimation on p { from: lc.startP; to: 0; duration: Math.max(30, root.th.chipFallMs * lc.startP); easing.type: Easing.InCubic
+                    NumberAnimation on p { from: lc.startP; to: 0; duration: root.dur(Math.max(30, root.th.chipFallMs * lc.startP)); easing.type: Easing.InCubic
                         onFinished: Qt.callLater(() => root.dropLeaving(lc.uid)) }
                     readonly property var pl: root.lay[petal]
                     readonly property real spawnA: pl ? pl.mid : root.baseMid(petal)
@@ -1803,7 +1896,7 @@ Item {
             opacity: root.fadeGhost
             color: Qt.rgba(root.th.glass.r + 0.03, root.th.glass.g + 0.03, root.th.glass.b + 0.04, 0.9)
             border.width: 1.5; border.color: root.th.accent
-            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: root.dur(120); easing.type: Easing.OutCubic } }
             property var entry: { DesktopEntries.applications.values; return root.dragWin ? DesktopEntries.heuristicLookup(root.dragWin.cls) : null }
             Image {
                 anchors.centerIn: parent; width: 24; height: 24; sourceSize: Qt.size(48, 48)
@@ -1838,17 +1931,16 @@ Item {
                 return Qt.point(g.x, g.y)
             }
             readonly property var sp: root.lay[root.settingsIndex]
-            readonly property real ca: sp ? Math.cos(sp.mid) : 0
-            readonly property real sa: sp ? Math.sin(sp.mid) : -1
-            readonly property real reach: 1 / Math.max(Math.abs(ca) / (w / 2), Math.abs(sa) / (h / 2), 1e-6)   // centre -> card edge along the axis
-            readonly property real wantX: root.vert
-                ? (root.colLay.direction > 0 ? root.colLay.x + root.colLay.width + root.th.hoverGrow + 12 : root.colLay.x - root.th.hoverGrow - 12 - w)
-                : org.x + ca * (reach + root.th.cardGap) - w / 2
-            readonly property real wantY: root.vert ? org.y - h / 2 : org.y + sa * (reach + root.th.cardGap) - h / 2
-            x: Math.max(12, Math.min(root.sw - w - 12, wantX))
-            y: Math.max(12, Math.min(root.sh - h - 12, wantY))
-            Behavior on x { enabled: root.settingsK > 0.02; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-            Behavior on y { enabled: root.settingsK > 0.02; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            // placement (Geometry.js cardPlace / ColumnGeometry.js cardPlace): attached to the Settings item with a
+            // cardGap, on-screen and never over the ring / column
+            readonly property var place: root.vert
+                ? CG.cardPlace(root.colLay, root.settingsIndex, w, h, root.th.cardGap, root.sw, root.sh, root.th.cardMargin)
+                : G.cardPlace(root.hx + root.driftX, root.hy + root.driftY, (sp ? sp.ro : root.th.outerR * root.ringK), sp ? sp.mid : -Math.PI / 2,
+                              w, h, root.th.cardGap, root.sw, root.sh, root.th.cardMargin)
+            x: place.x
+            y: place.y
+            Behavior on x { enabled: root.settingsK > 0.02; NumberAnimation { duration: root.dur(220); easing.type: Easing.OutCubic } }
+            Behavior on y { enabled: root.settingsK > 0.02; NumberAnimation { duration: root.dur(220); easing.type: Easing.OutCubic } }
             width: w; height: h; radius: root.th.cardRadius
             visible: root.settingsK > 0.004
             opacity: root.settingsK
@@ -1894,7 +1986,7 @@ Item {
                                 y: 2; height: parent.height - 4; width: root.th.segW; radius: 6
                                 x: 2 + (setRow.cur === setRow.modelData.opts[1].name ? root.th.segW : 0)
                                 color: Qt.rgba(1, 1, 1, root.th.pillAlpha)
-                                Behavior on x { NumberAnimation { duration: root.th.segMs; easing.type: Easing.OutCubic } }
+                                Behavior on x { NumberAnimation { duration: root.dur(root.th.segMs); easing.type: Easing.OutCubic } }
                             }
                             Repeater {
                                 model: setRow.modelData.opts
@@ -1908,7 +2000,7 @@ Item {
                                         text: parent.modelData.label; textFormat: Text.PlainText
                                         color: root.th.text; opacity: parent.on ? 1 : (segMouse.containsMouse ? 0.85 : 0.6)
                                         font.family: root.th.font; font.pixelSize: root.th.segPx; font.weight: Font.Medium
-                                        Behavior on opacity { NumberAnimation { duration: 120 } }
+                                        Behavior on opacity { NumberAnimation { duration: root.dur(120) } }
                                     }
                                     MouseArea {
                                         id: segMouse
@@ -1921,7 +2013,7 @@ Item {
                     }
                 }
             }
-            Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+            Behavior on height { NumberAnimation { duration: root.dur(160); easing.type: Easing.OutCubic } }
         }
 
         // toast
@@ -1936,8 +2028,8 @@ Item {
             border.width: 1; border.color: Qt.rgba(root.th.accent.r, root.th.accent.g, root.th.accent.b, 0.8)
             opacity: root.toastShown ? 1 : 0
             visible: opacity > 0.01
-            Behavior on opacity { NumberAnimation { duration: 140 } }
-            Behavior on y { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: root.dur(140) } }
+            Behavior on y { NumberAnimation { duration: root.dur(160); easing.type: Easing.OutCubic } }
             Text {
                 id: toastLabel
                 anchors.centerIn: parent
