@@ -9,7 +9,7 @@ A mouse-first workspace switcher for the Omarchy shell. Open it at the cursor, h
 - Two layouts: **Bloom** (radial) and **Vertical** (column).
 - Hover a workspace to reveal its windows.
 - Click a workspace to switch to it.
-- Drag a window icon onto another workspace to move it silently. Hold **Shift** when you release to move it and follow it.
+- Drag a window icon onto another workspace to move it silently (focus stays where it is).
 - Drop a window icon onto another window to place it side by side (dwindle workspaces; otherwise it is simply moved there).
 - A Settings petal/slot (gear) with **Layout** (Bloom / Vertical) and **Theme** (Neutral / Omarchy).
 - Never takes keyboard focus.
@@ -17,9 +17,10 @@ A mouse-first workspace switcher for the Omarchy shell. Open it at the cursor, h
 ## Requirements
 
 - Omarchy with its Quickshell shell.
-- Hyprland 0.55 or newer with a **Lua** config. Bloom dispatches through Hyprland's Lua API (`hyprctl eval`), so it does not work with hyprlang configs.
+- Hyprland 0.55 or newer with a **Lua** config (0.55 introduced the Lua config and every Lua dispatcher Bloom uses). Tested on 0.56. Bloom dispatches through Hyprland's Lua API, so it does not work with hyprlang configs.
 - `python3`, only for side-by-side placement.
-- Omarchy's workspace layout state (`~/.local/state/omarchy/workspace-layouts`) and its `o.workspace_mode` helper, used for side-by-side placement and the layout glyphs.
+- Omarchy's workspace layout files (`~/.local/state/omarchy/workspace-layouts/<n>.lua` and `default.lua`) are read for the layout glyphs and side-by-side placement. If they are missing, Bloom falls back to Hyprland's reported layout, then `dwindle`.
+- Omarchy's `o.workspace_mode` Lua helper is called only during side-by-side placement (to briefly set a scratch workspace to dwindle). If that step fails, Bloom falls back to a plain move.
 
 ## Install
 
