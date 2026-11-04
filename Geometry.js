@@ -8,6 +8,14 @@ var TAU = Math.PI * 2
 function wrap(a) { a = (a + Math.PI) % TAU; if (a < 0) a += TAU; return a - Math.PI }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
+// Usable area of a monitor: the screen minus the zones reserved by layer-shell bars (Hyprland `reserved` =
+// [left, top, right, bottom]). Everything that must not cover the user's bar clamps to this rect {x0,y0,x1,y1}
+// (screen-local px). Missing / invalid insets count as 0.
+function area(W, H, res) {
+    var r = res || [0, 0, 0, 0], v = function (i) { return Math.max(0, Number(r[i]) || 0) }
+    return { x0: v(0), y0: v(1), x1: W - v(2), y1: H - v(3) }
+}
+
 // The ring is always a complete circle at a FIXED orientation: workspace 1 starts at 12 o'clock, the Settings petal is
 // always the last slot, whatever the pointer position (muscle memory). No edge fan / flip / partial arc / rotation.
 function fullArc() { return { full: true, start: -Math.PI / 2, span: TAU, dir: 1 } }
@@ -20,11 +28,11 @@ function ringExtent(n, T) { return T.outerR * ringScale(n, T) + T.hoverGrow + (T
 
 // Hub position that keeps the WHOLE bloom (well + ring incl. hover growth) on screen inside margin m: the pointer
 // position (cx, cy) is clamped inward by `ext` + m (centred on that axis if the screen is smaller than the bloom).
-function hubClamp(cx, cy, ext, W, H, m) {
+function hubClamp(cx, cy, ext, A, m) {
     var lo = ext + m
     return {
-        x: W < 2 * lo ? W / 2 : clamp(cx, lo, W - lo),
-        y: H < 2 * lo ? H / 2 : clamp(cy, lo, H - lo)
+        x: A.x1 - A.x0 < 2 * lo ? (A.x0 + A.x1) / 2 : clamp(cx, A.x0 + lo, A.x1 - lo),
+        y: A.y1 - A.y0 < 2 * lo ? (A.y0 + A.y1) / 2 : clamp(cy, A.y0 + lo, A.y1 - lo)
     }
 }
 
@@ -129,14 +137,14 @@ function seamPath(cx, cy, ri, ro, a0, a1, cr) {
 // Settings card placement (bloom). The ring never rotates, so the card goes where there is room: candidates all
 // around the ring (every 1 deg), each pushed out along its own angle until the card's nearest edge/corner is exactly
 // `gap` from the ring's outer edge R (pass R = resting outer radius + hover growth), so it never touches the ring.
-// Only candidates fully on screen (inside margin m) count. Winner: the one whose angle is closest to the Settings
+// Only candidates fully inside the usable area A (margin m) count. Winner: the one whose angle is closest to the Settings
 // petal's angle `ang`; ties (the two sides of the axis) go to the one nearer the screen centre. If nothing fits
 // (screen smaller than ring + card) the old behaviour applies: slide into the margin, keep the largest clearance.
 function rectClearance(cx, cy, x, y, w, h) {
     var nx = clamp(cx, x, x + w), ny = clamp(cy, y, y + h)
     return Math.hypot(cx - nx, cy - ny)
 }
-function cardPlace(cx, cy, R, ang, w, h, gap, W, H, m) {
+function cardPlace(cx, cy, R, ang, w, h, gap, A, m) {
     var want = R + gap, best = null, fb = null
     for (var k = 0; k < 360; k++) {
         var a = ang + wrap(k * Math.PI / 180), ux = Math.cos(a), uy = Math.sin(a)
@@ -146,12 +154,12 @@ function cardPlace(cx, cy, R, ang, w, h, gap, W, H, m) {
             if (rectClearance(cx, cy, cx + ux * t - w / 2, cy + uy * t - h / 2, w, h) >= want) hi = t; else lo = t
         }
         var x = cx + ux * hi - w / 2, y = cy + uy * hi - h / 2
-        var dA = Math.abs(wrap(a - ang)), dC = Math.hypot(x + w / 2 - W / 2, y + h / 2 - H / 2)
-        if (x >= m - 1e-9 && y >= m - 1e-9 && x + w <= W - m + 1e-9 && y + h <= H - m + 1e-9) {
+        var dA = Math.abs(wrap(a - ang)), dC = Math.hypot(x + w / 2 - (A.x0 + A.x1) / 2, y + h / 2 - (A.y0 + A.y1) / 2)
+        if (x >= A.x0 + m - 1e-9 && y >= A.y0 + m - 1e-9 && x + w <= A.x1 - m + 1e-9 && y + h <= A.y1 - m + 1e-9) {
             if (!best || dA < best.dAng - 1e-9 || (Math.abs(dA - best.dAng) <= 1e-9 && dC < best.dC))
                 best = { x: x, y: y, clear: rectClearance(cx, cy, x, y, w, h), ang: a, dAng: dA, dC: dC, fits: true }
         } else if (!best) {
-            var sx = clamp(x, m, Math.max(m, W - w - m)), sy = clamp(y, m, Math.max(m, H - h - m))
+            var sx = clamp(x, A.x0 + m, Math.max(A.x0 + m, A.x1 - w - m)), sy = clamp(y, A.y0 + m, Math.max(A.y0 + m, A.y1 - h - m))
             var cl = rectClearance(cx, cy, sx, sy, w, h)
             if (!fb || cl > fb.clear + 1e-9) fb = { x: sx, y: sy, clear: cl, ang: a, dAng: dA, dC: dC, fits: false }
         }
@@ -192,8 +200,8 @@ function bandPath(cx, cy, ri, ro, a0, a1) {
 // (chipSize + chipGap), fanned symmetrically around `mid`. A row holds at most chipMaxSpanDeg of arc and at
 // most what stays on screen at its radius. If the fan would leave the screen, the whole fan's centre angle
 // is shifted to the nearest angle where it fits (smallest |shift|; least-violating if none fits).
-// hx, hy = hub position on screen, W, H = screen size. Returns [{x,y,ang,r,row,inRow,amount}] plus .shift
-function chipSlots(count, mid, rc, hx, hy, W, H, T) {
+// hx, hy = hub position on screen, A = usable area (see area()). Returns [{x,y,ang,r,row,inRow,amount}] plus .shift
+function chipSlots(count, mid, rc, hx, hy, A, T) {
     var out = []
     out.shift = 0
     if (count <= 0) return out
@@ -201,7 +209,7 @@ function chipSlots(count, mid, rc, hx, hy, W, H, T) {
     var maxSpan = T.chipMaxSpanDeg * Math.PI / 180
     var m = T.edgeMargin + T.railWidth / 2
     function off(x, y) {
-        return Math.max(0, m - x) + Math.max(0, x - (W - m)) + Math.max(0, m - y) + Math.max(0, y - (H - m))
+        return Math.max(0, A.x0 + m - x) + Math.max(0, x - (A.x1 - m)) + Math.max(0, A.y0 + m - y) + Math.max(0, y - (A.y1 - m))
     }
     // rows: capacity from the span limit and from the widest on-screen run at that radius
     var rows = [], left = count, row = 0

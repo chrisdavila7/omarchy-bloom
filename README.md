@@ -58,7 +58,7 @@ hl.layer_rule({ match = { namespace = "^bloom$" }, blur = true, ignore_alpha = 0
 hl.layer_rule({ match = { namespace = "^bloom-veil$" }, no_anim = true, animation = "none" })
 ```
 
-Bloom works without these but looks flatter. With blur on, the 2 px seams between petals/slots and the center well are drawn at an alpha above `ignore_alpha`, so they frost like the glass instead of showing the sharp wallpaper. Apply changes with `hyprctl reload`.
+Bloom works without these but looks flatter. With blur on, the 2 px seams between petals/slots and the center well are drawn at an alpha above `ignore_alpha`, so they frost like the glass instead of showing the sharp wallpaper. Bloom keeps clear of bars that reserve screen space (Omarchy's bar on any side). Apply changes with `hyprctl reload`.
 
 ## Usage
 

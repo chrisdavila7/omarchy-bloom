@@ -5,8 +5,8 @@ function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
 // Column of `count` slots (workspaces, then '+', then the gear). `breaks` lists the item indices that start a
 // new group (an 8 px separator before them instead of the slot gap). The column is placed so the centre of
-// the full rail is centred on (px, py) when unclamped, and slides only as far as needed to stay on screen.
-function column(px, py, count, anchor, W, H, T, breaks) {
+// the full rail is centred on (px, py) when unclamped, and slides only as far as needed to stay inside the usable area A (screen minus reserved bars).
+function column(px, py, count, anchor, A, T, breaks) {
     var size = T.slotSize, gap = T.slotGap, sep = T.separator
     var offsets = [], isBreak = [], offset = 0
     for (var i = 0; i < count; i++) {
@@ -17,10 +17,10 @@ function column(px, py, count, anchor, W, H, T, breaks) {
     }
     anchor = clamp(anchor, 0, Math.max(0, count - 1))
     var m = T.edgeMargin
-    var y = clamp(py - offset / 2, m, Math.max(m, H - m - offset))
-    var x = clamp(px - size / 2, m, Math.max(m, W - m - size))
+    var y = clamp(py - offset / 2, A.y0 + m, Math.max(A.y0 + m, A.y1 - m - offset))
+    var x = clamp(px - size / 2, A.x0 + m, Math.max(A.x0 + m, A.x1 - m - size))
     return { x: x, y: y, width: size, height: offset, offsets: offsets, isBreak: isBreak, count: count, size: size,
-             direction: (x + size / 2 <= W / 2) ? 1 : -1, anchor: anchor }
+             direction: (x + size / 2 <= (A.x0 + A.x1) / 2) ? 1 : -1, anchor: anchor }
 }
 function itemCenter(L, i) {
     if (i < 0 || i >= L.count) return null
@@ -61,19 +61,19 @@ function spawnPoint(L, i, T) {
 // slot, `T.chipRowPitch` apart. A row holds as many chips as fit between the slot and the far screen margin
 // (capped at T.chipMaxCols); extra chips wrap to more rows, and the block of rows is shifted vertically to stay
 // on screen. Returns [{x, y, row, inRow, amount}] (+ .rows = [{y, x0, x1, n}] band extents, .overflow).
-function chipSlots(L, index, count, W, H, T) {
+function chipSlots(L, index, count, A, T) {
     var out = [], c = itemCenter(L, index)
     out.rows = []; out.overflow = false
     if (!c || count <= 0) return out
     var rad = T.chipSize / 2, pitch = T.chipSize + T.chipGap, dir = L.direction
     var mx = T.edgeMargin + rad, my = T.edgeMargin + T.railWidth / 2
     var first = edgeX(L, T) + dir * (T.chipEdgeGap + rad)
-    var avail = dir > 0 ? (W - mx) - first : first - mx
+    var avail = dir > 0 ? (A.x1 - mx) - first : first - (A.x0 + mx)
     var cols = clamp(Math.floor(avail / pitch + 1e-9) + 1, 1, T.chipMaxCols)
-    var rowsFit = Math.max(1, Math.floor((H - 2 * my) / T.chipRowPitch + 1e-9) + 1)
+    var rowsFit = Math.max(1, Math.floor((A.y1 - A.y0 - 2 * my) / T.chipRowPitch + 1e-9) + 1)
     var rows = Math.min(rowsFit, Math.ceil(count / cols))
     var span = (rows - 1) * T.chipRowPitch
-    var y0 = clamp(c.y - span / 2, my, Math.max(my, H - my - span))
+    var y0 = clamp(c.y - span / 2, A.y0 + my, Math.max(A.y0 + my, A.y1 - my - span))
     var k = 0
     for (var r = 0; r < rows; r++) {
         var n = Math.min(cols, count - k), y = y0 + r * T.chipRowPitch
@@ -110,14 +110,14 @@ function inReveal(L, index, slots, x, y, pad, T) {
 // Settings card placement (vertical): beside item i on the screen-centre side, `gap` from the slot's resting edge,
 // centred on the slot and slid to stay inside margin `m`. If it does not fit there it goes to the other side of the
 // column (never over the column).
-function cardPlace(L, i, w, h, gap, W, H, m) {
+function cardPlace(L, i, w, h, gap, A, m) {
     var c = itemCenter(L, i)
-    if (!c) return { x: m, y: m, side: 0 }
+    if (!c) return { x: A.x0 + m, y: A.y0 + m, side: 0 }
     var dir = L.direction
     var xs = dir > 0 ? L.x + L.width + gap : L.x - gap - w
     var xo = dir > 0 ? L.x - gap - w : L.x + L.width + gap
-    var fits = function (x) { return x >= m && x + w <= W - m }
-    var x = fits(xs) ? xs : (fits(xo) ? xo : clamp(xs, m, Math.max(m, W - w - m)))
-    var y = clamp(c.y - h / 2, m, Math.max(m, H - h - m))
+    var fits = function (x) { return x >= A.x0 + m && x + w <= A.x1 - m }
+    var x = fits(xs) ? xs : (fits(xo) ? xo : clamp(xs, A.x0 + m, Math.max(A.x0 + m, A.x1 - w - m)))
+    var y = clamp(c.y - h / 2, A.y0 + m, Math.max(A.y0 + m, A.y1 - h - m))
     return { x: x, y: y, side: x === xs ? dir : -dir }
 }

@@ -206,8 +206,12 @@ Item {
         // recessed well (visual only; hit-testing uses hubR / aimDeadZone). Its radius is the petals' inner
         // radius (innerR * ring scale) minus wellGap, so it keeps the same hairline from the petals at any scale.
         readonly property real wellGap: 2          // px between the well rim and the petals' inner edge (= gap)
-        readonly property real wellFillAlpha: 0.22 // faint fill; kept above the blur ignore_alpha (0.2) so the well frosts like the glass
-        readonly property color wellFillColor: "#7a7a7a" // lighter than the smoked glass: the well reads airy/emptier than the petals, the inner shadow keeps it recessed
+        // Quiet frosted glass: the user's compositor blur is weak, so the fill itself must mute the backdrop. A mid-gray a touch
+        // lighter than the petal glass (#343434 @ 0.50-0.66), alpha 0.54 at the centre rising to 0.64 at the rim (denser toward
+        // the rim, so the middle stays airy and the edge reads as glass, not a hole). Always above the blur ignore_alpha (0.2).
+        readonly property color wellFillColor: "#484848"
+        readonly property real wellFillAlpha: 0.54     // alpha at the centre
+        readonly property real wellFillRimAlpha: 0.64  // alpha at the rim
         // glass seams: the hairline gaps (2 px) are filled with this near-black so they are blurred (alpha > ignore_alpha) and
         // read as deliberate glass seams over any wallpaper, instead of bright unblurred cracks
         readonly property real seamAlpha: 0.32
@@ -478,13 +482,22 @@ Item {
     // (they glide between the two during a layout morph).
     property real curX: 0
     property real curY: 0
-    readonly property var bloomHub: G.hubClamp(curX, curY, G.ringExtent(count, th), sw, sh, th.edgeMargin)
+    readonly property var bloomHub: G.hubClamp(curX, curY, G.ringExtent(count, th), usable, th.edgeMargin)
     readonly property real bhx: bloomHub.x
     readonly property real bhy: bloomHub.y
     readonly property real hx: curX + (bhx - curX) * (1 - vK)
     readonly property real hy: curY + (bhy - curY) * (1 - vK)
     property real sw: 1280
     property real sh: 800
+    // Zones reserved on this monitor by layer-shell bars (Omarchy's bar): Hyprland monitor `reserved` = [left, top, right, bottom].
+    // Read natively from the already-synced monitor object (no extra process, no latency on open; it follows monitor events
+    // through Hyprland.refreshMonitors()). All clamping (hub, column, chips, card, toast) uses `usable`, the screen minus these.
+    readonly property var reserved: {
+        const m = Hyprland.monitors.values.find(x => x.name === monitorName)
+        const r = m && m.lastIpcObject ? m.lastIpcObject.reserved : null
+        return r && r.length >= 4 ? [r[0], r[1], r[2], r[3]] : [0, 0, 0, 0]
+    }
+    readonly property var usable: G.area(sw, sh, reserved)
     property real driftX: 0
     property real driftY: 0
     property real px: 0
@@ -562,7 +575,7 @@ Item {
         b.push(frozen.length)       // separator before Settings
         return b
     }
-    readonly property var colLay: CG.column(hx, hy, itemCount, anchorIdx, sw, sh, th, colBreaks)
+    readonly property var colLay: CG.column(hx, hy, itemCount, anchorIdx, usable, th, colBreaks)
     property real rimY: 0               // smoothed pointer y driving the vertical rim catch
     Behavior on rimY { NumberAnimation { duration: root.dur(th.aimMs); easing.type: Easing.OutCubic } }
     readonly property real vigX: hx + (colLay.x + colLay.width / 2 - hx) * vK
@@ -620,7 +633,7 @@ Item {
     // Slots of the revealed petal's chips: stable (fully grown radius, base mid angle)
     // Chip arc: concentric with the dial, chipEdgeGap beyond the hovered petal's grown edge to the chip's inner edge
     readonly property real chipR0: th.outerR * ringK + th.hoverGrow + th.chipEdgeGap + th.chipSize / 2
-    readonly property var slots: revealed < 0 ? [] : (vert ? CG.chipSlots(colLay, revealed, chipList.count, sw, sh, th) : G.chipSlots(chipList.count, baseMid(revealed), chipR0, hx, hy, sw, sh, th))
+    readonly property var slots: revealed < 0 ? [] : (vert ? CG.chipSlots(colLay, revealed, chipList.count, usable, th) : G.chipSlots(chipList.count, baseMid(revealed), chipR0, hx, hy, usable, th))
     readonly property var vRows: vert && slots.rows ? slots.rows : []
     readonly property var vSpawn: vert && revealed >= 0 && revealed < itemCount ? CG.spawnPoint(colLay, revealed, th) : null
     readonly property var railRows: {
@@ -637,8 +650,8 @@ Item {
         const s = slots[j]
         if (!s) return Qt.point(-999, -999)
         const bx = vert ? driftX : hx + driftX, by = vert ? driftY : hy + driftY
-        return Qt.point(Math.max(8 + th.chipSize / 2, Math.min(sw - 8 - th.chipSize / 2, bx + s.x)),
-                        Math.max(8 + th.chipSize / 2, Math.min(sh - 8 - th.chipSize / 2, by + s.y)))
+        return Qt.point(Math.max(usable.x0 + 8 + th.chipSize / 2, Math.min(usable.x1 - 8 - th.chipSize / 2, bx + s.x)),
+                        Math.max(usable.y0 + 8 + th.chipSize / 2, Math.min(usable.y1 - 8 - th.chipSize / 2, by + s.y)))
     }
     function chipAt(x, y) {
         if (!chipsOpen || revealed < 0) return -1
@@ -863,8 +876,8 @@ Item {
         lm = layoutMode
         morphTimer.stop(); morphAnim.stop(); morphing = false; vK = vert ? 1 : 0
         targetScreen = s; monitorName = s.name; sw = s.width; sh = s.height
-        curX = Math.max(th.hubR + 6, Math.min(sw - th.hubR - 6, cx - s.x))
-        curY = Math.max(th.hubR + 6, Math.min(sh - th.hubR - 6, cy - s.y))
+        curX = Math.max(usable.x0 + th.hubR + 6, Math.min(usable.x1 - th.hubR - 6, cx - s.x))
+        curY = Math.max(usable.y0 + th.hubR + 6, Math.min(usable.y1 - th.hubR - 6, cy - s.y))
         px = curX; py = curY; driftX = 0; driftY = 0
         hovered = -1; pressedIdx = -1; pulse = -1; dragAddr = ""; dragging = false; flying = false; settingsOpen = false
         insIdx = -1; hoverChip = -1; toastShown = false; overrides = ({}); windowSig = ""
@@ -1403,14 +1416,24 @@ Item {
                 readonly property string circ: "M0 " + r + " A" + r + " " + r + " 0 1 1 " + d + " " + r + " A" + r + " " + r + " 0 1 1 0 " + r
                 // the fill runs out to the petals' inner edge (r + wellGap): no dark ring, no unblurred crack between well and petals
                 readonly property real rf: r + root.th.wellGap + 0.5   // 0.5 px under the petals' inner edge: no antialias crack
-                readonly property string circFill: "M" + (-root.th.wellGap) + " " + r + " A" + rf + " " + rf + " 0 1 1 " + (d + root.th.wellGap) + " " + r + " A" + rf + " " + rf + " 0 1 1 " + (-root.th.wellGap) + " " + r
+                readonly property string circFill: "M" + (r - rf) + " " + r + " A" + rf + " " + rf + " 0 1 1 " + (r + rf) + " " + r + " A" + rf + " " + rf + " 0 1 1 " + (r - rf) + " " + r   // centred on the well (r, r)
                 x: -r; y: -r; width: d; height: d
                 opacity: root.openFade(bloom.hubProg, 1) * (1 - root.vK)
                 Shape {
                     anchors.fill: parent
                     preferredRendererType: Shape.CurveRenderer
                     ShapePath {
-                        strokeWidth: -1; fillColor: Qt.rgba(root.th.wellFillColor.r, root.th.wellFillColor.g, root.th.wellFillColor.b, root.th.wellFillAlpha)
+                        strokeWidth: -1
+                        fillGradient: RadialGradient {
+                            centerX: well.r; centerY: well.r; focalX: centerX; focalY: centerY
+                            centerRadius: well.rf
+                            // quadratic ramp toward the rim: smooth, no visible ring where the density starts
+                            GradientStop { position: 0.0; color: Qt.rgba(root.th.wellFillColor.r, root.th.wellFillColor.g, root.th.wellFillColor.b, root.th.wellFillAlpha) }
+                            GradientStop { position: 0.5; color: Qt.rgba(root.th.wellFillColor.r, root.th.wellFillColor.g, root.th.wellFillColor.b, root.th.wellFillAlpha + (root.th.wellFillRimAlpha - root.th.wellFillAlpha) * 0.0625) }
+                            GradientStop { position: 0.75; color: Qt.rgba(root.th.wellFillColor.r, root.th.wellFillColor.g, root.th.wellFillColor.b, root.th.wellFillAlpha + (root.th.wellFillRimAlpha - root.th.wellFillAlpha) * 0.25) }
+                            GradientStop { position: 0.9; color: Qt.rgba(root.th.wellFillColor.r, root.th.wellFillColor.g, root.th.wellFillColor.b, root.th.wellFillAlpha + (root.th.wellFillRimAlpha - root.th.wellFillAlpha) * 0.64) }
+                            GradientStop { position: 1.0; color: Qt.rgba(root.th.wellFillColor.r, root.th.wellFillColor.g, root.th.wellFillColor.b, root.th.wellFillRimAlpha) }
+                        }
                         PathSvg { path: well.circFill }
                     }
                     // inner shadow: gradient centre pushed down, so the upper rim is darkest; quadratic
@@ -1804,8 +1827,8 @@ Item {
                     readonly property real wantX: root.vert ? spx + (sx - spx) * pr : curR * Math.cos(curA)
                     readonly property real wantY: root.vert ? spy + (sy - spy) * pr : curR * Math.sin(curA)
                     // screen clamp (chips never leave the display)
-                    x: Math.max(8 + width / 2 - chipLayer.x, Math.min(root.sw - 8 - width / 2 - chipLayer.x, wantX)) - width / 2
-                    y: Math.max(8 + height / 2 - chipLayer.y, Math.min(root.sh - 8 - height / 2 - chipLayer.y, wantY)) - height / 2
+                    x: Math.max(root.usable.x0 + 8 + width / 2 - chipLayer.x, Math.min(root.usable.x1 - 8 - width / 2 - chipLayer.x, wantX)) - width / 2
+                    y: Math.max(root.usable.y0 + 8 + height / 2 - chipLayer.y, Math.min(root.usable.y1 - 8 - height / 2 - chipLayer.y, wantY)) - height / 2
                     width: root.th.chipSize; height: root.th.chipSize
                     readonly property bool isHover: root.hoverChip === index
                     readonly property bool ghosted: address === root.dragAddr && (root.dragging || root.flying)
@@ -1856,7 +1879,7 @@ Item {
                     Rectangle {
                         id: lbl
                         readonly property real wantX: (chip.width - width) / 2
-                        x: Math.max(8 - chipLayer.x - chip.x, Math.min(root.sw - 8 - chipLayer.x - chip.x - width, wantX))
+                        x: Math.max(root.usable.x0 + 8 - chipLayer.x - chip.x, Math.min(root.usable.x1 - 8 - chipLayer.x - chip.x - width, wantX))
                         y: -height - 8
                         width: Math.min(labelText.implicitWidth + 18, 300); height: 24; radius: 12
                         color: Qt.rgba(root.th.glass.r, root.th.glass.g, root.th.glass.b, 0.82)
@@ -1900,8 +1923,8 @@ Item {
                     readonly property real curA: spawnA + G.wrap(sa - spawnA) * p
                     readonly property real curR: spawnR + (sr - spawnR) * p
                     width: root.th.chipSize; height: root.th.chipSize
-                    x: Math.max(8 + width / 2 - chipLayer.x, Math.min(root.sw - 8 - width / 2 - chipLayer.x, vert ? spx + (sx - spx) * p : curR * Math.cos(curA))) - width / 2
-                    y: Math.max(8 + height / 2 - chipLayer.y, Math.min(root.sh - 8 - height / 2 - chipLayer.y, vert ? spy + (sy - spy) * p : curR * Math.sin(curA))) - height / 2
+                    x: Math.max(root.usable.x0 + 8 + width / 2 - chipLayer.x, Math.min(root.usable.x1 - 8 - width / 2 - chipLayer.x, vert ? spx + (sx - spx) * p : curR * Math.cos(curA))) - width / 2
+                    y: Math.max(root.usable.y0 + 8 + height / 2 - chipLayer.y, Math.min(root.usable.y1 - 8 - height / 2 - chipLayer.y, vert ? spy + (sy - spy) * p : curR * Math.sin(curA))) - height / 2
                     opacity: p
                     scale: root.th.chipSpawnScale + (1 - root.th.chipSpawnScale) * p
                     Rectangle {
@@ -1972,9 +1995,9 @@ Item {
             // placement (Geometry.js cardPlace / ColumnGeometry.js cardPlace): bloom = adjacent to the ring (cardGap beyond
             // its outer edge incl. hover growth) at the on-screen angle nearest the gear petal; vertical = beside the column
             readonly property var place: root.vert
-                ? CG.cardPlace(root.colLay, root.settingsIndex, w, h, root.th.cardGap, root.sw, root.sh, root.th.cardMargin)
+                ? CG.cardPlace(root.colLay, root.settingsIndex, w, h, root.th.cardGap, root.usable, root.th.cardMargin)
                 : G.cardPlace(root.hx + root.driftX, root.hy + root.driftY, (sp ? sp.roH : root.th.outerR * root.ringK + root.th.hoverGrow), sp ? sp.mid : -Math.PI / 2,
-                              w, h, root.th.cardGap, root.sw, root.sh, root.th.cardMargin)
+                              w, h, root.th.cardGap, root.usable, root.th.cardMargin)
             x: place.x
             y: place.y
             Behavior on x { enabled: root.settingsK > 0.02; NumberAnimation { duration: root.dur(220); easing.type: Easing.OutCubic } }
@@ -2057,10 +2080,10 @@ Item {
         // toast
         Rectangle {
             id: toastPill
-            readonly property real wantY: root.vert ? (root.colLay.y + root.colLay.height + 14 + height <= root.sh - 12 ? root.colLay.y + root.colLay.height + 14 : root.colLay.y - 14 - height)
-                                                    : (root.hy < root.sh - 260 ? root.hy + 230 : root.hy - 230 - height)
-            x: Math.max(12, Math.min(root.sw - width - 12, root.vigX - width / 2))
-            y: Math.max(12, Math.min(root.sh - height - 12, wantY)) + (root.toastShown ? 0 : 8)
+            readonly property real wantY: root.vert ? (root.colLay.y + root.colLay.height + 14 + height <= root.usable.y1 - 12 ? root.colLay.y + root.colLay.height + 14 : root.colLay.y - 14 - height)
+                                                    : (root.hy < root.usable.y1 - 260 ? root.hy + 230 : root.hy - 230 - height)
+            x: Math.max(root.usable.x0 + 12, Math.min(root.usable.x1 - width - 12, root.vigX - width / 2))
+            y: Math.max(root.usable.y0 + 12, Math.min(root.usable.y1 - height - 12, wantY)) + (root.toastShown ? 0 : 8)
             width: toastLabel.implicitWidth + 28; height: 30; radius: 15
             color: Qt.rgba(root.th.glass.r, root.th.glass.g, root.th.glass.b, 0.82)
             border.width: 1; border.color: Qt.rgba(root.th.accent.r, root.th.accent.g, root.th.accent.b, 0.8)

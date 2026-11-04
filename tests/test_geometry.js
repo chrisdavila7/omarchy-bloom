@@ -1,17 +1,18 @@
 // node test_geometry.js  -- polar hit-testing vs drawn wedges, fixed spans + edge-flip
 const fs = require('fs'), path = require('path'), vm = require('vm')
 const src = fs.readFileSync(path.join(__dirname, '../Geometry.js'), 'utf8').replace(/^\.pragma.*$/m, '')
-const G = {}; vm.runInNewContext(src + ';this.G={fullArc,ringScale,ringExtent,hubClamp,arcGap,layout,petalAt,drawnIndexAt,petalPath,seamPath,cardPlace,rectClearance,chipSlots,chipHit,wrap}', G)
+const G = {}; vm.runInNewContext(src + ';this.G={fullArc,ringScale,ringExtent,hubClamp,area,arcGap,layout,petalAt,drawnIndexAt,petalPath,seamPath,cardPlace,rectClearance,chipSlots,chipHit,wrap}', G)
 const g = G.G
 const T = { innerR: 40, outerR: 92, hoverGrow: 6, maxScale: 1.7, hitSlop: 4, minPetalAngle: 0.42, driftMax: 3,
             edgeMargin: 8, chipSize: 34, chipGap: 6, chipMaxSpanDeg: 150, chipRowStep: 44, chipEdgeGap: 7, railWidth: 40 }
 const W = 1280, H = 800
+const A0 = g.area(W, H)
 let fails = 0, checks = 0
 const ok = (c, m) => { checks++; if (!c) { fails++; console.log('FAIL', m) } }
 
 const spots = { center: [640, 400], top: [640, 20], bottom: [640, 785], left: [10, 400], right: [1270, 400],
                 tl: [12, 12], tr: [1268, 12], bl: [12, 788], br: [1268, 788], nearTop: [300, 120] }
-const hubFor = (x, y, n) => { const h = g.hubClamp(Math.max(28, Math.min(W - 28, x)), Math.max(28, Math.min(H - 28, y)), g.ringExtent(n, T), W, H, T.edgeMargin); return [h.x, h.y] }
+const hubFor = (x, y, n) => { const h = g.hubClamp(Math.max(28, Math.min(W - 28, x)), Math.max(28, Math.min(H - 28, y)), g.ringExtent(n, T), A0, T.edgeMargin); return [h.x, h.y] }
 // the ring is a full circle at every pointer position; the whole bloom (every petal incl. hover growth, and the well) is on screen
 for (const n of [6, 7, 8, 9, 12, 16]) for (const [name, [x, y]] of Object.entries(spots)) {
   const [hx, hy] = hubFor(x, y, n), K = g.ringScale(n, T)
@@ -69,7 +70,7 @@ console.log('bloom stays whole and on screen: ' + Object.keys(spots).length + ' 
   ok(bad === 0, `dense sweep: ${bad} of ${cnt} hubs leave the bloom off screen`)
 }
 // tiny screen: hub is centred rather than leaving an edge
-{ const h = g.hubClamp(5, 5, 98, 150, 150, 8); ok(h.x === 75 && h.y === 75, 'screen smaller than the bloom: centred') }
+{ const h = g.hubClamp(5, 5, 98, g.area(150, 150), 8); ok(h.x === 75 && h.y === 75, 'screen smaller than the bloom: centred') }
 // path strings are well formed
 const lay = g.layout(7, { full: true, start: -Math.PI/2, span: 2*Math.PI, dir: 1 }, T, 1)
 for (const p of lay) { const d = g.petalPath(100, 100, p.ri, p.ro, p.a0, p.a1, 2, 7); ok(/^M[\d. -]+A/.test(d) && !/NaN/.test(d), 'petalPath ' + d.slice(0, 40)) }
@@ -89,7 +90,7 @@ for (const p of lay) { const d = g.petalPath(100, 100, p.ri, p.ro, p.a0, p.a1, 2
       for (let pi = 0; pi < n; pi++) {
         const mid = arc.start + arc.dir * (pi + 0.5) * arc.span / n
         for (let cnt = 1; cnt <= 14; cnt++) {
-          const s = g.chipSlots(cnt, mid, rc, hx, hy, W, H, T), tag = `${name} n=${n} petal ${pi} cnt=${cnt}`
+          const s = g.chipSlots(cnt, mid, rc, hx, hy, A0, T), tag = `${name} n=${n} petal ${pi} cnt=${cnt}`
           ok(s.length === cnt, `${tag} slot count ${s.length}`)
           nTot++
           // concentric: every chip on a circle around the hub, radius rc + row*step; row 0 is the petal arc
@@ -139,13 +140,13 @@ for (const p of lay) { const d = g.petalPath(100, 100, p.ri, p.ro, p.a0, p.a1, 2
   console.log(`chip arcs: ${nTot} layouts, ${nShift} shifted, ${nOff} still partly off screen (overflow counts at screen edges)`)
   // explicit: centre hub, 5 chips -> single arc centred on the petal, wider than the petal when many
   {
-    const mid = -Math.PI / 2, rc = 110, s = g.chipSlots(5, mid, rc, 640, 400, W, H, T)
+    const mid = -Math.PI / 2, rc = 110, s = g.chipSlots(5, mid, rc, 640, 400, A0, T)
     ok(Math.abs(s.shift) < 1e-12 && s.every(c => c.row === 0), 'centre 5 chips single unshifted arc')
     ok(Math.abs(s[2].ang - mid) < 1e-9 && Math.abs(s[0].ang + s[4].ang - 2 * mid) < 1e-9, 'centre 5 chips symmetric')
-    const m8 = g.chipSlots(9, mid, rc, 640, 400, W, H, T)
+    const m8 = g.chipSlots(9, mid, rc, 640, 400, A0, T)
     ok(Math.max(...m8.map(c => c.row)) === 1 && m8.filter(c => c.row === 0).length === 8, 'overflow: 9 chips -> 8 on the arc + 1 on the next arc')
     // near the right edge the fan shifts toward the screen and stays on screen
-    const e = g.chipSlots(5, 0, rc, 1270, 400, W, H, T)
+    const e = g.chipSlots(5, 0, rc, 1270, 400, A0, T)
     ok(e.shift !== 0 && e.every(c => 1270 + c.x <= W - margin + 1), 'right-edge fan shifts on screen')
     ok(Math.abs(g.wrap(e[2].ang - 0)) > 0.3, 'right-edge fan moved off the offscreen side')
   }
@@ -177,7 +178,7 @@ for (const p of lay) { const d = g.petalPath(100, 100, p.ri, p.ro, p.a0, p.a1, 2
     const [hx, hy] = hubFor(x0, y0, cnt), K = g.ringScale(cnt, T), R = T.outerR * K + T.hoverGrow
     const lay = g.layout(cnt, g.fullArc(), T, K), sp = lay[cnt - 1]
     mids.add(cnt + ':' + sp.mid.toFixed(9))
-    const p = g.cardPlace(hx, hy, R, sp.mid, w, ch, GAP, W, H, M)
+    const p = g.cardPlace(hx, hy, R, sp.mid, w, ch, GAP, A0, M)
     const tag = `${name} n=${cnt} w=${w}`
     n++
     if (!p.fits) { fb++; continue }
@@ -201,13 +202,61 @@ for (const p of lay) { const d = g.petalPath(100, 100, p.ri, p.ro, p.a0, p.a1, 2
   ok(mids.size === 5, 'gear petal angle identical in every position (one per ring size)')
   { // open centre: the card sits on the gear's own axis, cardGap beyond the grown petal, centred on it
     const [hx, hy] = [640, 400], K = g.ringScale(6, T), R = T.outerR * K + T.hoverGrow, mid = -Math.PI / 2 + 5.5 * Math.PI * 2 / 6
-    const p = g.cardPlace(hx, hy, R, mid, 207, ch, GAP, W, H, M)
+    const p = g.cardPlace(hx, hy, R, mid, 207, ch, GAP, A0, M)
     ok(Math.abs(p.ang - mid) < 1e-9 && Math.abs(g.rectClearance(hx, hy, p.x, p.y, 207, ch) - (R + GAP)) < 1e-6, 'centre: gear axis, cardGap')
     ok(Math.abs((p.x + 207 / 2 - hx) * Math.sin(mid) - (p.y + ch / 2 - hy) * Math.cos(mid)) < 1e-6, 'centre: card centred on the gear axis') }
   { // tie: a gear straight up at the top edge has equal angles either side; the card goes to the side nearer the screen centre
     const hx = 300, hy = 110, R = 98 + 6
-    const pl = g.cardPlace(hx, hy, R, -Math.PI / 2, 207, ch, GAP, W, H, M), pr = g.cardPlace(1280 - hx, hy, R, -Math.PI / 2, 207, ch, GAP, W, H, M)
+    const pl = g.cardPlace(hx, hy, R, -Math.PI / 2, 207, ch, GAP, A0, M), pr = g.cardPlace(1280 - hx, hy, R, -Math.PI / 2, 207, ch, GAP, A0, M)
     ok(pl.x + 103 > hx && pr.x + 103 < 1280 - hx, 'tie goes toward the screen centre (mirror symmetric)') }
   console.log(`card placement: ${n} cases (${n - fb} placed, ${fb} fallback), ${onAxis} on the gear's axis, ${off} moved around the ring (max ${(worstAng * 180 / Math.PI).toFixed(0)} deg), gap to ring ${minGap.toFixed(3)}..${maxGap.toFixed(3)} (want ${GAP})`)
+}
+
+// ---- reserved areas (Omarchy's bar): everything stays inside the USABLE area (screen minus reserved insets), margin inside it
+{
+  const insets = { 'left bar 48': [48, 0, 0, 0], 'left 36': [36, 0, 0, 0], 'top bar 30': [0, 30, 0, 0], 'left+top': [48, 30, 0, 0], 'right+bottom': [0, 0, 40, 28], 'all four': [36, 24, 36, 24] }
+  const M = T.edgeMargin, cw = [207, 240], ch = 76, GAP = 10, CM = 12
+  let n = 0, bad = 0
+  const chk = (c, msg) => { n++; ok(c, msg) }
+  for (const [iname, res] of Object.entries(insets)) {
+    const A = g.area(W, H, res)
+    chk(A.x0 === res[0] && A.y0 === res[1] && A.x1 === W - res[2] && A.y1 === H - res[3], `${iname} area rect`)
+    const pts = [[640, 400], [4, 4], [4, 400], [4, 796], [1276, 4], [1276, 796], [640, 4], [640, 796], [1276, 400], [60, 60], [100, 700], [40, 300]]
+    for (const cnt of [6, 9]) for (const [x, y] of pts) {
+      const K = g.ringScale(cnt, T), ext = g.ringExtent(cnt, T)
+      const h = g.hubClamp(Math.max(28, Math.min(W - 28, x)), Math.max(28, Math.min(H - 28, y)), ext, A, M)
+      const tag = `${iname} n=${cnt} @${x},${y}`
+      chk(h.x - ext >= A.x0 + M - 1e-9 && h.x + ext <= A.x1 - M + 1e-9 && h.y - ext >= A.y0 + M - 1e-9 && h.y + ext <= A.y1 - M + 1e-9, `${tag} bloom inside usable area`)
+      const lay = g.layout(cnt, g.fullArc(), T, K)
+      for (const p of lay) for (const rr of [p.ro, p.roH]) for (let k = 0; k <= 12; k++) {
+        const a = p.a0 + (p.a1 - p.a0) * k / 12, px = h.x + rr * Math.cos(a), py = h.y + rr * Math.sin(a)
+        chk(px >= A.x0 + M - 1e-6 && px <= A.x1 - M + 1e-6 && py >= A.y0 + M - 1e-6 && py <= A.y1 - M + 1e-6, `${tag} petal outline inside`)
+      }
+      // chips (every petal, several counts): centres and the glass rail edge (railWidth/2) inside the usable area
+      for (const [pi, p] of lay.entries()) if (pi % 2 === 0 || pi === cnt - 1) for (const c of [1, 6]) {
+        const rc = p.roH + T.chipEdgeGap + T.chipSize / 2, s = g.chipSlots(c, p.mid, rc, h.x, h.y, A, T)
+        for (const q of s) {
+          const sx = h.x + q.x, sy = h.y + q.y, m = T.edgeMargin + T.railWidth / 2
+          if (!(sx >= A.x0 + m - 1 && sx <= A.x1 - m + 1 && sy >= A.y0 + m - 1 && sy <= A.y1 - m + 1)) bad++
+        }
+      }
+      // settings card (gear = last petal)
+      const R = T.outerR * K + T.hoverGrow, sp = lay[cnt - 1]
+      for (const w of cw) {
+        const p = g.cardPlace(h.x, h.y, R, sp.mid, w, ch, GAP, A, CM)
+        chk(p.fits, `${tag} card fits`)
+        chk(p.x >= A.x0 + CM - 1e-9 && p.y >= A.y0 + CM - 1e-9 && p.x + w <= A.x1 - CM + 1e-9 && p.y + ch <= A.y1 - CM + 1e-9, `${tag} card inside usable area`)
+        chk(Math.abs(g.rectClearance(h.x, h.y, p.x, p.y, w, ch) - (R + GAP)) < 1e-6, `${tag} card exactly cardGap from the ring`)
+      }
+    }
+  }
+  ok(bad === 0, `chips partly outside the usable area: ${bad}`)
+  { const A = g.area(W, H, [48, 0, 0, 0]), h = g.hubClamp(4, 400, g.ringExtent(6, T), A, M)
+    ok(h.x === 48 + g.ringExtent(6, T) + M, 'left bar: hub x = bar + ring + margin') }
+  { const A = g.area(W, H, [0, 30, 0, 0]), h = g.hubClamp(640, 4, g.ringExtent(6, T), A, M)
+    ok(h.y === 30 + g.ringExtent(6, T) + M, 'top bar: hub y = bar + ring + margin') }
+  { const A = g.area(W, H, null); ok(A.x0 === 0 && A.y1 === H, 'no reserved info = full screen')
+    const B = g.area(W, H, [-5, 'x', undefined, NaN]); ok(B.x0 === 0 && B.y0 === 0 && B.x1 === W && B.y1 === H, 'invalid insets ignored') }
+  console.log(`reserved areas: ${n} checks over ${Object.keys(insets).length} inset sets, ${fails} total failures`)
 }
 console.log(`${checks} checks, ${fails} failures`); process.exit(fails ? 1 : 0)
