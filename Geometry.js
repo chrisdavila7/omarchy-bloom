@@ -124,6 +124,59 @@ function petalPath(cx, cy, ri, ro, a0, a1, gap, cr) {
         " Q" + f(cO0[0]) + " " + f(cO0[1]) + " " + f(oS[0]) + " " + f(oS[1]) + " Z"
 }
 
+// Seam wedge: the petal's full angular wedge (no gap) with the outer corners rounded by `cr` and the inner corners
+// sharp. Drawn with the petal (even-odd) so only the hairline gap and the corner notches are filled.
+function seamPath(cx, cy, ri, ro, a0, a1, cr) {
+    var span = a1 - a0
+    if (span <= 0 || ro <= ri + 2) return ""
+    cr = Math.min(cr, (ro - ri) / 3, ro * span / 4)
+    var u0 = [Math.cos(a0), Math.sin(a0)], u1 = [Math.cos(a1), Math.sin(a1)]
+    function along(u, t) { return [cx + t * u[0], cy + t * u[1]] }
+    var oS = pt(cx, cy, ro, a0 + cr / ro), oE = pt(cx, cy, ro, a1 - cr / ro)
+    var spO = span - 2 * cr / ro, large = spO > Math.PI ? 1 : 0, largeI = span > Math.PI ? 1 : 0
+    var cO1 = along(u1, ro), L1 = along(u1, ro - cr), I1 = along(u1, ri)
+    var I0 = along(u0, ri), L4 = along(u0, ro - cr), cO0 = along(u0, ro)
+    return "M" + f(oS[0]) + " " + f(oS[1]) +
+        " A" + f(ro) + " " + f(ro) + " 0 " + large + " 1 " + f(oE[0]) + " " + f(oE[1]) +
+        " Q" + f(cO1[0]) + " " + f(cO1[1]) + " " + f(L1[0]) + " " + f(L1[1]) +
+        " L" + f(I1[0]) + " " + f(I1[1]) +
+        " A" + f(ri) + " " + f(ri) + " 0 " + largeI + " 0 " + f(I0[0]) + " " + f(I0[1]) +
+        " L" + f(L4[0]) + " " + f(L4[1]) +
+        " Q" + f(cO0[0]) + " " + f(cO0[1]) + " " + f(oS[0]) + " " + f(oS[1]) + " Z"
+}
+
+
+// Settings card placement (bloom). The card (w x h) attaches to the Settings petal: its centre sits on the petal's
+// outward axis, pushed out just far enough that the card's nearest edge/corner is exactly `gap` from the ring's outer
+// radius R (so the gap to the petal is cardGap whatever the axis angle). If that spot is off screen or would touch the
+// ring after sliding it inside the margin `m`, the mirrored axis is tried, then axes fanned around the ring (nearest
+// first). The first candidate whose clearance to the ring disc (centre cx,cy) is at least R + gap wins; otherwise the
+// one with the largest clearance.
+function rectClearance(cx, cy, x, y, w, h) {
+    var nx = clamp(cx, x, x + w), ny = clamp(cy, y, y + h)
+    return Math.hypot(cx - nx, cy - ny)
+}
+function cardPlace(cx, cy, R, ang, w, h, gap, W, H, m) {
+    var cands = [ang, ang + Math.PI]
+    for (var k = 1; k <= 23; k++) { cands.push(ang + k * Math.PI / 24); cands.push(ang - k * Math.PI / 24) }
+    var best = null, want = R + gap
+    for (var i = 0; i < cands.length; i++) {
+        var a = cands[i], ux = Math.cos(a), uy = Math.sin(a)
+        var lo = 0, hi = want + Math.hypot(w, h)
+        for (var it = 0; it < 48; it++) {
+            var t = (lo + hi) / 2
+            if (rectClearance(cx, cy, cx + ux * t - w / 2, cy + uy * t - h / 2, w, h) >= want) hi = t; else lo = t
+        }
+        var x = cx + ux * hi - w / 2, y = cy + uy * hi - h / 2
+        x = clamp(x, m, Math.max(m, W - w - m)); y = clamp(y, m, Math.max(m, H - h - m))
+        var clear = rectClearance(cx, cy, x, y, w, h)
+        var cand = { x: x, y: y, clear: clear, ang: a, index: i }
+        if (clear >= want - 1e-6) return cand
+        if (!best || clear > best.clear) best = cand
+    }
+    return best
+}
+
 // Open arc path (for rails / edge highlight) between two angles.
 function arcPath(cx, cy, r, a0, a1) {
     if (a1 - a0 < 0.002) a1 = a0 + 0.002

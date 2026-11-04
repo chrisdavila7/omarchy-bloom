@@ -1,7 +1,7 @@
 // node test_column_geometry.js -- vertical layout geometry: slot positions, anchoring, clamping, hit-testing, chip rows
 const fs = require('fs'), vm = require('vm'), path = require('path'), assert = require('assert')
 const src = fs.readFileSync(path.join(__dirname, '../ColumnGeometry.js'), 'utf8').replace(/^\.pragma.*$/m, '')
-const ctx = {}; vm.runInNewContext(src + ';this.api={column,itemCenter,slotRect,hitTest,edgeX,spawnPoint,chipSlots,chipHit,inReveal}', ctx)
+const ctx = {}; vm.runInNewContext(src + ';this.api={column,itemCenter,slotRect,hitTest,edgeX,spawnPoint,chipSlots,chipHit,inReveal,cardPlace}', ctx)
 const c = ctx.api
 const T = { slotSize: 40, slotGap: 3, slotHair: 2, separator: 8, edgeMargin: 8, hoverGrow: 6, chipSize: 34, chipGap: 6, railWidth: 40,
             chipEdgeGap: 7, chipMaxCols: 8, chipRowPitch: 42, bandPad: 3, chipSpawnInset: 10 }
@@ -79,5 +79,31 @@ for (const { n, breaks } of cases) {
       }
     }
   }
+}
+
+// ---- settings card placement (vertical): beside the Settings slot, never over the column, always on screen -----
+{
+  const GAP = 10, M = 12, ch = 76
+  let n = 0, same = 0, other = 0
+  for (const w of [206, 240]) for (const { n: cnt, breaks } of cases) {
+    for (const [px, py] of [[640, 400], [4, 4], [1276, 4], [4, 796], [1276, 796], [640, 2], [640, 798], [2, 400], [1278, 400], [100, 700], [1200, 100], [30, 400], [1250, 400]]) {
+      for (const cur of [0, cnt - 1]) {
+        const L = c.column(px, py, cnt, cur, W, H, T, breaks), i = cnt - 1
+        const p = c.cardPlace(L, i, w, ch, GAP, W, H, M), tag = `n=${cnt} @${px},${py} w=${w}`
+        n++
+        ok(p.x >= M - 1e-9 && p.x + w <= W - M + 1e-9 && p.y >= M - 1e-9 && p.y + ch <= H - M + 1e-9, `card on screen ${tag}`)
+        const overlapX = p.x < L.x + L.width + T.hoverGrow && p.x + w > L.x - T.hoverGrow
+        ok(!overlapX, `card clear of the column incl. hover widening ${tag}`)
+        const cy = c.itemCenter(L, i).y
+        ok(p.y <= cy && p.y + ch >= cy, `card spans the gear slot's centre line ${tag}`)
+        if (p.side === L.direction) {
+          same++
+          const edge = L.direction > 0 ? L.x + L.width : L.x
+          ok(Math.abs(Math.abs(p.x - edge) - (L.direction > 0 ? GAP : w + GAP)) < 1e-9 || Math.abs((L.direction > 0 ? p.x - edge : edge - (p.x + w)) - GAP) < 1e-9, `gap on the centre side ${tag}`)
+        } else other++
+      }
+    }
+  }
+  console.log(`column card placement: ${n} cases (${same} toward centre, ${other} mirrored)`)
 }
 console.log(`column geometry: ${checks} checks, ${layouts} layouts, 0 failures`)

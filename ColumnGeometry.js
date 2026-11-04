@@ -107,3 +107,17 @@ function inReveal(L, index, slots, x, y, pad, T) {
     }
     return false
 }
+// Settings card placement (vertical): beside item i on the screen-centre side, `gap` from the slot's resting edge,
+// centred on the slot and slid to stay inside margin `m`. If it does not fit there it goes to the other side of the
+// column (never over the column).
+function cardPlace(L, i, w, h, gap, W, H, m) {
+    var c = itemCenter(L, i)
+    if (!c) return { x: m, y: m, side: 0 }
+    var dir = L.direction
+    var xs = dir > 0 ? L.x + L.width + gap : L.x - gap - w
+    var xo = dir > 0 ? L.x - gap - w : L.x + L.width + gap
+    var fits = function (x) { return x >= m && x + w <= W - m }
+    var x = fits(xs) ? xs : (fits(xo) ? xo : clamp(xs, m, Math.max(m, W - w - m)))
+    var y = clamp(c.y - h / 2, m, Math.max(m, H - h - m))
+    return { x: x, y: y, side: x === xs ? dir : -dir }
+}
