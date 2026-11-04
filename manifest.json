@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.chrisdavila7.bloom",
   "name": "Bloom",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Radial or vertical mouse-first workspace switcher with drag-to-move windows.",
   "author": "Bloom contributors",
   "license": "MIT",
