@@ -108,7 +108,7 @@ Item {
                 Behavior on a1 { enabled: ra.live && rs.armed; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
                 Behavior on rr { enabled: ra.live && rs.armed; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
                 property real rowK: row ? 1 : 0           // a row the petal no longer needs fades on its own
-                Behavior on rowK { NumberAnimation { duration: root.dur(ra.th ? ra.th.chipFallMs : 120); easing.type: Easing.InCubic } }
+                Behavior on rowK { NumberAnimation { duration: root.fdur(ra.th ? ra.th.chipFallMs : 120); easing.type: Easing.InCubic } }
                 readonly property real pp: Math.max(0, Math.min(1, ra.p))
                 readonly property real sc: ra.th ? ra.th.chipSpawnScale + (1 - ra.th.chipSpawnScale) * pp : 1
                 readonly property real b: ra.th ? ra.th.boundary : 0
@@ -165,7 +165,7 @@ Item {
                 Behavior on xa { enabled: rr.live && rb.armed; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
                 Behavior on xb { enabled: rr.live && rb.armed; NumberAnimation { duration: root.dur(140); easing.type: Easing.OutCubic } }
                 property real rowK: row ? 1 : 0
-                Behavior on rowK { NumberAnimation { duration: root.dur(rr.th ? rr.th.chipFallMs : 120); easing.type: Easing.InCubic } }
+                Behavior on rowK { NumberAnimation { duration: root.fdur(rr.th ? rr.th.chipFallMs : 120); easing.type: Easing.InCubic } }
                 readonly property real pp: Math.max(0, Math.min(1, rr.p))
                 readonly property real sc: rr.th ? rr.th.chipSpawnScale + (1 - rr.th.chipSpawnScale) * pp : 1
                 readonly property real cy: rr.spawnY + (yy - rr.spawnY) * pp
@@ -192,6 +192,7 @@ Item {
         // overshoot or pointer drift.
         readonly property bool reduced: Host.Style.reduceMotion === true
         readonly property int reducedFadeMs: 80
+        readonly property int reducedChipMs: 90   // chips / bands / settings card fade in reduced motion
         readonly property real hubR: 22
         readonly property real innerR: 40
         readonly property real outerR: 92
@@ -200,8 +201,7 @@ Item {
         readonly property real gap: 2              // hairline between petals
         readonly property real corner: 7
         readonly property real minPetalAngle: 0.42
-        readonly property real maxScale: 1.7       // ring grows toward corners so petals stay wide enough
-        readonly property real fitRadius: 128      // keep this much room on screen around the hub
+        readonly property real maxScale: 1.7       // ring grows only when very many workspaces would make the petals too narrow
         readonly property real edgeMargin: 8
         // recessed well (visual only; hit-testing uses hubR / aimDeadZone). Its radius is the petals' inner
         // radius (innerR * ring scale) minus wellGap, so it keeps the same hairline from the petals at any scale.
@@ -210,11 +210,11 @@ Item {
         readonly property color wellFillColor: "#6a6a6a" // lighter than the smoked glass: the well reads airy/emptier than the petals, the inner shadow keeps it recessed
         // glass seams: the hairline gaps (2 px) are filled with this near-black so they are blurred (alpha > ignore_alpha) and
         // read as deliberate glass seams over any wallpaper, instead of bright unblurred cracks
-        readonly property real seamAlpha: 0.38
+        readonly property real seamAlpha: 0.32
         readonly property real seamBleed: 0.4      // px the seam wedge overlaps the petal's arcs, so even-odd edges never coincide (no dotted fringe)
-        readonly property real wellShadowAlpha: 0.50 // inner shadow darkness at the upper rim
-        readonly property real wellShadowStart: 0.50 // radial position where the shadow begins (0..1)
-        readonly property real wellShadowOffsetK: 0.14 // shadow gradient centre sits this fraction of the well radius below the centre (light from above)
+        readonly property real wellShadowAlpha: 0.30 // inner shadow darkness at the very upper rim
+        readonly property real wellShadowStart: 0.74 // radial position where the shadow begins (0..1): a thin crescent at the upper rim, fading quickly
+        readonly property real wellShadowOffsetK: 0.16 // shadow gradient centre sits this fraction of the well radius below the centre (light from above)
         readonly property real wellLipAlpha: 0.07  // faint light lip on the lower inner rim
         readonly property real chipSize: 34
         readonly property real chipEdgeGap: 7      // px from the grown petal's outer edge to the chips' inner edge
@@ -264,6 +264,7 @@ Item {
         readonly property real colWatermarkPx: 28     // vertical: icon size
         readonly property int watermarkFadeMs: 180    // crossfade when the main app changes
         readonly property int settingsGlyphPx: 17     // bloom Settings petal glyph
+        readonly property real gearFallbackScale: 1.7 // the plain U+2699 gear is ~60% of the cog's visual size
         readonly property real hoverLift: 0.11     // lightening of the glass tint on hover
         // hover = rim catch: white light on the outer edge, centred on the pointer angle
         readonly property real rimCatchWidth: 2.4   // px, thickness of the lit arc
@@ -325,7 +326,12 @@ Item {
         readonly property real colOvershoot: 0.5   // restrained easeOutBack (bloom: overshoot)
         readonly property int colStagger: reduced ? 0 : 14       // ms per slot away from the current one
         readonly property int colNumberPx: 17
-        readonly property int colGlyphPx: 18
+        readonly property int colGearPx: 18           // vertical Settings gear
+        readonly property int colGlyphPx: 10          // current slot's layout glyph (badge): ~60% of the numeral cap height once drawn
+        readonly property real colGlyphAlpha: 0.85
+        readonly property int colPairNumberPx: 14     // number under the badge
+        readonly property real colPairNumberDy: 6     // px the number moves down / the badge moves up (40 px slot)
+        readonly property real colBadgeDy: -9
         readonly property real colPress: 0.97      // label scale while pressed
         readonly property int colPressMs: 160
         readonly property int colEmptyMs: 140      // empty slots (opacity 0.5) fade over this
@@ -347,6 +353,8 @@ Item {
         readonly property real cardRadius: 12
         readonly property real cardGap: 10         // gap between the Settings item (petal outer edge / slot edge) and the card
         readonly property real cardMargin: 12      // card stays this far inside the screen
+        readonly property real cardW: 212          // card size used to decide the ring rotation (the card measures 207 x 76)
+        readonly property real cardH: 76
         readonly property real cardAlpha: 0.86
         readonly property real cardScale0: 0.96    // scale it grows from
         readonly property int cardInMs: 160        // OutCubic
@@ -467,8 +475,16 @@ Item {
     readonly property real clockTotal: th.reduced ? th.reducedFadeMs : vert ? Math.max(colDistance(0), colDistance(itemCount - 1)) * th.colStagger + th.petalMs : (count - 1) * th.stagger + th.petalMs
     property var targetScreen: null
     property string monitorName: ""
-    property real hx: 0
-    property real hy: 0
+    // curX/curY = the pointer at open (kept 28 px from the edge). The vertical layout is centred on it; the bloom's hub (bhx/bhy)
+    // is that point clamped inward so the whole ring incl. hover growth stays on screen. hx/hy = the hub of what is drawn now
+    // (they glide between the two during a layout morph).
+    property real curX: 0
+    property real curY: 0
+    readonly property var bloomHub: G.hubClamp(curX, curY, G.ringExtent(count, th), sw, sh, th.edgeMargin)
+    readonly property real bhx: bloomHub.x
+    readonly property real bhy: bloomHub.y
+    readonly property real hx: curX + (bhx - curX) * (1 - vK)
+    readonly property real hy: curY + (bhy - curY) * (1 - vK)
     property real sw: 1280
     property real sh: 800
     property real driftX: 0
@@ -532,8 +548,10 @@ Item {
     property bool toastShown: false
 
     // ------------------------------------------------------------- geometry
-    readonly property var arc: G.arcFor(hx, hy, sw, sh, count, th)
-    readonly property real ringK: Math.max(1, Math.min(th.maxScale, count * th.minPetalAngle / arc.span))
+    // always a complete ring; it is turned just far enough (ringRot) that the Settings petal has room for its card beside it
+    readonly property real ringRot: G.ringRotation(bhx, bhy, count, th.outerR * ringK, th.cardW, th.cardH, th.cardGap, sw, sh, th.cardMargin)
+    readonly property var arc: G.fullArc(ringRot)
+    readonly property real ringK: G.ringScale(count, th)
     readonly property var lay: G.layout(count, arc, th, ringK)
     // vertical layout: items = workspaces, then Settings. The full rail is centered at open.
     property int anchorIdx: 0
@@ -577,7 +595,11 @@ Item {
     }
     function reloadModes() { wsModeFile.reload(); defModeFile.reload() }
     // reduced motion: the unfold collapses to one short fade (prog stays 1, opacity follows the clock)
+    // the plain-symbol fallback gear (no Nerd Font installed) is a small glyph in text fonts: draw it larger so it matches the cog's visual size
+    function gearPx(px) { return glyphOk ? px : Math.round(px * th.gearFallbackScale) }
     function dur(ms) { return th.reduced ? 0 : ms }
+    // reduced motion keeps a short fade (th.reducedChipMs) for things that appear / disappear (chips, bands, settings card) instead of popping
+    function fdur(ms) { return th.reduced ? th.reducedChipMs : ms }
     function openFade(prog, k) { return th.reduced ? Math.max(0, Math.min(1, clock / Math.max(1, clockTotal))) : Math.max(0, Math.min(1, prog * k)) }
     function easeOutBack(t, ov) { const s = ov === undefined ? th.overshoot : ov; t = t - 1; return 1 + (s + 1) * t * t * t + s * t * t }
     function colDistance(i) {
@@ -844,9 +866,9 @@ Item {
         lm = layoutMode
         morphTimer.stop(); morphAnim.stop(); morphing = false; vK = vert ? 1 : 0
         targetScreen = s; monitorName = s.name; sw = s.width; sh = s.height
-        hx = Math.max(th.hubR + 6, Math.min(sw - th.hubR - 6, cx - s.x))
-        hy = Math.max(th.hubR + 6, Math.min(sh - th.hubR - 6, cy - s.y))
-        px = hx; py = hy; driftX = 0; driftY = 0
+        curX = Math.max(th.hubR + 6, Math.min(sw - th.hubR - 6, cx - s.x))
+        curY = Math.max(th.hubR + 6, Math.min(sh - th.hubR - 6, cy - s.y))
+        px = curX; py = curY; driftX = 0; driftY = 0
         hovered = -1; pressedIdx = -1; pulse = -1; dragAddr = ""; dragging = false; flying = false; settingsOpen = false
         insIdx = -1; hoverChip = -1; toastShown = false; overrides = ({}); windowSig = ""
         frozen = []; windows = []
@@ -857,7 +879,7 @@ Item {
         const ci = frozen.indexOf(currentWs)
         if (ci >= 0) { aimRaw = baseMid(ci); aimAngle = aimRaw }
         anchorIdx = ci >= 0 ? ci : 0
-        rimY = hy
+        rimY = curY
         pending = false; active = true; shown = true; inputReady = true
         clockAnim.stop(); clockAnim.from = 0; clockAnim.to = clockTotal; clockAnim.duration = clockTotal; clockAnim.start()
         settleTimer.restart()
@@ -917,7 +939,7 @@ Item {
     // ---- settings card
     property bool settingsOpen: false
     property real settingsK: settingsOpen ? 1 : 0
-    Behavior on settingsK { NumberAnimation { duration: root.dur(root.settingsOpen ? root.th.cardInMs : root.th.cardOutMs); easing.type: root.settingsOpen ? Easing.OutCubic : Easing.InCubic } }
+    Behavior on settingsK { NumberAnimation { duration: root.fdur(root.settingsOpen ? root.th.cardInMs : root.th.cardOutMs); easing.type: root.settingsOpen ? Easing.OutCubic : Easing.InCubic } }
     function openSettings() {
         if (!shown || !active || settingsOpen) return
         hovered = -1; pressedIdx = -1; dragAddr = ""; dragWin = null
@@ -1185,7 +1207,10 @@ Item {
                     readonly property real s0: rIn / Math.max(rOut, 1)   // inner radius as a fraction of the outer (depth-light gradient)
                     readonly property string d: G.petalPath(root.th.boundary, root.th.boundary, rIn, rOut, g.a0, g.a1, root.th.gap, root.th.corner)
                     // the full wedge (no gap) minus the petal = the petal's half of the seam on each side
-                    readonly property string seam: d === "" ? "" : G.seamPath(root.th.boundary, root.th.boundary, rIn - root.th.seamBleed, rOut + root.th.seamBleed, g.a0, g.a1, root.th.corner + half) + " " + d
+                    // the seam stops at the neighbours' resting outer edge (rSeam), so a hovered / pulsing petal grows past it without a dark stub
+                    readonly property real rSeam: Math.min(rOut, root.th.hubR + (g.ro - root.th.hubR) * p)
+                    readonly property string dSeam: G.petalPath(root.th.boundary, root.th.boundary, rIn, rSeam, g.a0, g.a1, root.th.gap, root.th.corner)
+                    readonly property string seam: dSeam === "" ? "" : G.seamPath(root.th.boundary, root.th.boundary, rIn - root.th.seamBleed, rSeam + root.th.seamBleed, g.a0, g.a1, root.th.corner + half) + " " + dSeam
                     readonly property string edge: G.arcPath(root.th.boundary, root.th.boundary, rOut - 0.6, g.a0 + (half + root.th.corner + 1) / rOut, g.a1 - (half + root.th.corner + 1) / rOut)
                     // rim catch: lit band just inside the outer edge, clamped to the petal's straight span
                     readonly property real rimMargin: (half + root.th.corner + 1) / Math.max(rOut, 1)
@@ -1342,14 +1367,14 @@ Item {
                         Text {
                             anchors.centerIn: parent; anchors.verticalCenterOffset: 1
                             text: pet.settings ? (root.glyphOk ? root.th.glyphGear : "\u2699\ufe0e") : String(pet.wid)
-                            color: Qt.rgba(0, 0, 0, 0.5); font.family: pet.settings ? root.th.iconFont : root.th.font; font.pixelSize: pet.settings ? root.th.settingsGlyphPx : root.th.numberPx; font.weight: Font.Medium
+                            color: Qt.rgba(0, 0, 0, 0.5); font.family: pet.settings ? root.th.iconFont : root.th.font; font.pixelSize: pet.settings ? root.gearPx(root.th.settingsGlyphPx) : root.th.numberPx; font.weight: Font.Medium
                             font.features: ({ "tnum": 1 }); textFormat: Text.PlainText
                         }
                         Text {
                             anchors.centerIn: parent
                             text: pet.settings ? (root.glyphOk ? root.th.glyphGear : "\u2699\ufe0e") : String(pet.wid)
                             color: root.th.text; opacity: pet.settings ? 0.85 + 0.15 * pet.hov : 0.55 + 0.45 * pet.occ + 0.2 * pet.hov
-                            font.family: pet.settings ? root.th.iconFont : root.th.font; font.pixelSize: pet.settings ? root.th.settingsGlyphPx : root.th.numberPx; font.weight: Font.Medium
+                            font.family: pet.settings ? root.th.iconFont : root.th.font; font.pixelSize: pet.settings ? root.gearPx(root.th.settingsGlyphPx) : root.th.numberPx; font.weight: Font.Medium
                             font.features: ({ "tnum": 1 }); textFormat: Text.PlainText
                         }
                         // occupancy pips
@@ -1378,6 +1403,9 @@ Item {
                 readonly property real lipA: root.th.wellLipAlpha
                 readonly property real sa: root.th.wellShadowAlpha
                 readonly property string circ: "M0 " + r + " A" + r + " " + r + " 0 1 1 " + d + " " + r + " A" + r + " " + r + " 0 1 1 0 " + r
+                // the fill runs out to the petals' inner edge (r + wellGap): no dark ring, no unblurred crack between well and petals
+                readonly property real rf: r + root.th.wellGap + 0.5   // 0.5 px under the petals' inner edge: no antialias crack
+                readonly property string circFill: "M" + (-root.th.wellGap) + " " + r + " A" + rf + " " + rf + " 0 1 1 " + (d + root.th.wellGap) + " " + r + " A" + rf + " " + rf + " 0 1 1 " + (-root.th.wellGap) + " " + r
                 x: -r; y: -r; width: d; height: d
                 opacity: root.openFade(bloom.hubProg, 1) * (1 - root.vK)
                 Shape {
@@ -1385,7 +1413,7 @@ Item {
                     preferredRendererType: Shape.CurveRenderer
                     ShapePath {
                         strokeWidth: -1; fillColor: Qt.rgba(root.th.wellFillColor.r, root.th.wellFillColor.g, root.th.wellFillColor.b, root.th.wellFillAlpha)
-                        PathSvg { path: well.circ }
+                        PathSvg { path: well.circFill }
                     }
                     // inner shadow: gradient centre pushed down, so the upper rim is darkest; quadratic
                     // ramp (several stops) so there is no visible band where it starts
@@ -1417,20 +1445,6 @@ Item {
                             GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, well.lipA) }
                         }
                         PathSvg { path: well.circ }
-                    }
-                }
-                // the hairline between the well and the petals: same near-black seam as between petals
-                Shape {
-                    id: wellSeam
-                    readonly property real g: root.th.wellGap
-                    readonly property real rr: well.r + g
-                    x: -g; y: -g; width: well.d + 2 * g; height: well.d + 2 * g
-                    preferredRendererType: Shape.CurveRenderer
-                    ShapePath {
-                        strokeWidth: -1; fillRule: ShapePath.OddEvenFill
-                        fillColor: Qt.rgba(0, 0, 0, root.th.seamAlpha)
-                        PathSvg { path: "M0 " + wellSeam.rr + " A" + wellSeam.rr + " " + wellSeam.rr + " 0 1 1 " + 2 * wellSeam.rr + " " + wellSeam.rr + " A" + wellSeam.rr + " " + wellSeam.rr + " 0 1 1 0 " + wellSeam.rr
-                                       + " M" + (wellSeam.g + 0.5) + " " + wellSeam.rr + " A" + (well.r - 0.5) + " " + (well.r - 0.5) + " 0 1 1 " + (wellSeam.g + well.d - 0.5) + " " + wellSeam.rr + " A" + (well.r - 0.5) + " " + (well.r - 0.5) + " 0 1 1 " + (wellSeam.g + 0.5) + " " + wellSeam.rr }
                     }
                 }
             }
@@ -1608,27 +1622,53 @@ Item {
                         cls: sl.wcls
                         opacity: root.th.watermarkAlpha + root.th.watermarkHoverAdd * sl.hov
                     }
-                    // label: digit / gear (Settings); the current workspace shows its layout glyph instead of the number
+                    // label: digit / gear (Settings). The current workspace marks its layout with Omarchy's glyph: small, in the
+                    // text colour at colGlyphAlpha, above a slightly smaller number (see colGlyphPx / colPair*), so it reads as a quiet
+                    // layout badge instead of a solid white block. Without a font that has the glyph: plain number (+ the accent tick).
                     Item {
+                        id: colLabel
                         x: sl.lw ? sl.widen : 0; width: sl.rc.w; height: parent.height
                         scale: 1 - (1 - root.th.colPress) * sl.press
                         opacity: sl.special ? 0.85 + 0.15 * sl.hov : 1 - (1 - root.th.colEmptyAlpha) * sl.emp * (1 - sl.hov)
-                        // glyph only when the font really has it; otherwise the number (the accent tick still marks the current slot)
-                        readonly property bool glyph: root.glyphOk && (sl.special || sl.isCurrent)
-                        readonly property string txt: sl.special ? (root.glyphOk ? root.th.glyphGear : "\u2699\ufe0e") : (glyph ? root.modeGlyph(root.activeMode) : root.wsLabel(sl.wid))
+                        readonly property bool badge: root.glyphOk && sl.isCurrent && !sl.special
+                        readonly property bool gear: sl.special
+                        // number (hidden for the gear slot)
                         Text {
-                            anchors.centerIn: parent; anchors.verticalCenterOffset: 1
-                            text: parent.txt; textFormat: Text.PlainText; color: Qt.rgba(0, 0, 0, 0.5)
-                            font.family: parent.glyph ? root.th.iconFont : root.th.font
-                            font.pixelSize: parent.glyph ? root.th.colGlyphPx : root.th.colNumberPx; font.weight: Font.Medium
+                            visible: !colLabel.gear
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            y: (parent.height - height) / 2 + 1 + (colLabel.badge ? root.th.colPairNumberDy : 0)
+                            text: root.wsLabel(sl.wid); textFormat: Text.PlainText; color: Qt.rgba(0, 0, 0, 0.5)
+                            font.family: root.th.font; font.pixelSize: colLabel.badge ? root.th.colPairNumberPx : root.th.colNumberPx; font.weight: Font.Medium
                             font.features: ({ "tnum": 1 })
                         }
                         Text {
-                            anchors.centerIn: parent
-                            text: parent.txt; textFormat: Text.PlainText; color: root.th.text
-                            font.family: parent.glyph ? root.th.iconFont : root.th.font
-                            font.pixelSize: parent.glyph ? root.th.colGlyphPx : root.th.colNumberPx; font.weight: Font.Medium
+                            visible: !colLabel.gear
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            y: (parent.height - height) / 2 + (colLabel.badge ? root.th.colPairNumberDy : 0)
+                            text: root.wsLabel(sl.wid); textFormat: Text.PlainText; color: root.th.text
+                            font.family: root.th.font; font.pixelSize: colLabel.badge ? root.th.colPairNumberPx : root.th.colNumberPx; font.weight: Font.Medium
                             font.features: ({ "tnum": 1 })
+                        }
+                        // layout glyph badge above the number (current workspace)
+                        Text {
+                            visible: colLabel.badge
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            y: (parent.height - height) / 2 + root.th.colBadgeDy
+                            text: root.modeGlyph(root.activeMode); textFormat: Text.PlainText; color: root.th.text; opacity: root.th.colGlyphAlpha
+                            font.family: root.th.iconFont; font.pixelSize: root.th.colGlyphPx
+                        }
+                        // Settings gear
+                        Text {
+                            visible: colLabel.gear
+                            anchors.centerIn: parent; anchors.verticalCenterOffset: 1
+                            text: root.glyphOk ? root.th.glyphGear : "\u2699\ufe0e"; textFormat: Text.PlainText; color: Qt.rgba(0, 0, 0, 0.5)
+                            font.family: root.th.iconFont; font.pixelSize: root.gearPx(root.th.colGearPx); font.weight: Font.Medium
+                        }
+                        Text {
+                            visible: colLabel.gear
+                            anchors.centerIn: parent
+                            text: root.glyphOk ? root.th.glyphGear : "\u2699\ufe0e"; textFormat: Text.PlainText; color: root.th.text
+                            font.family: root.th.iconFont; font.pixelSize: root.gearPx(root.th.colGearPx); font.weight: Font.Medium
                         }
                     }
                 }
@@ -1657,7 +1697,7 @@ Item {
                     property real riseTarget: 0
                     p: riseTarget
                     Behavior on p {
-                        NumberAnimation { duration: root.dur(root.chipsOpen ? root.th.chipRiseMs : root.th.chipFallMs); easing.type: root.chipsOpen ? Easing.OutCubic : Easing.InCubic }
+                        NumberAnimation { duration: root.fdur(root.chipsOpen ? root.th.chipRiseMs : root.th.chipFallMs); easing.type: root.chipsOpen ? Easing.OutCubic : Easing.InCubic }
                     }
                     Component.onCompleted: riseTarget = Qt.binding(() => root.chipsOpen ? 1 : 0)
                 }
@@ -1677,7 +1717,7 @@ Item {
                     spawnA: pl ? pl.mid : root.baseMid(petal)
                     spawnR: pl ? pl.roH - root.th.chipSpawnInset : root.chipR0
                     p: startP
-                    NumberAnimation on p { from: lr.startP; to: 0; duration: root.dur(Math.max(30, root.th.chipFallMs * lr.startP)); easing.type: Easing.InCubic
+                    NumberAnimation on p { from: lr.startP; to: 0; duration: root.fdur(Math.max(30, root.th.chipFallMs * lr.startP)); easing.type: Easing.InCubic
                         onFinished: Qt.callLater(() => root.dropRailLeaving(lr.uid)) }
                 }
             }
@@ -1694,7 +1734,7 @@ Item {
                     property real riseTarget: 0
                     p: riseTarget
                     Behavior on p {
-                        NumberAnimation { duration: root.dur(root.chipsOpen ? root.th.chipRiseMs : root.th.chipFallMs); easing.type: root.chipsOpen ? Easing.OutCubic : Easing.InCubic }
+                        NumberAnimation { duration: root.fdur(root.chipsOpen ? root.th.chipRiseMs : root.th.chipFallMs); easing.type: root.chipsOpen ? Easing.OutCubic : Easing.InCubic }
                     }
                     Component.onCompleted: riseTarget = Qt.binding(() => root.chipsOpen ? 1 : 0)
                 }
@@ -1712,7 +1752,7 @@ Item {
                     rows: JSON.parse(rows_json)
                     spawnX: vlr.spx; spawnY: vlr.spy
                     p: startP
-                    NumberAnimation on p { from: vlr.startP; to: 0; duration: root.dur(Math.max(30, root.th.chipFallMs * vlr.startP)); easing.type: Easing.InCubic
+                    NumberAnimation on p { from: vlr.startP; to: 0; duration: root.fdur(Math.max(30, root.th.chipFallMs * vlr.startP)); easing.type: Easing.InCubic
                         onFinished: Qt.callLater(() => root.dropVRailLeaving(vlr.uid)) }
                 }
             }
@@ -1758,7 +1798,7 @@ Item {
                     property real riseTarget: 0
                     property real rise: riseTarget
                     Behavior on rise {
-                        NumberAnimation { duration: root.dur(root.chipsOpen ? root.th.chipRiseMs : root.th.chipFallMs); easing.type: root.chipsOpen ? Easing.OutCubic : Easing.InCubic }
+                        NumberAnimation { duration: root.fdur(root.chipsOpen ? root.th.chipRiseMs : root.th.chipFallMs); easing.type: root.chipsOpen ? Easing.OutCubic : Easing.InCubic }
                     }
                     readonly property real pr: Math.max(0, Math.min(1, rise))
                     readonly property real curA: spawnA + G.wrap(sa - spawnA) * pr
@@ -1854,7 +1894,7 @@ Item {
                     required property bool vert
                     required property real startP
                     property real p: startP
-                    NumberAnimation on p { from: lc.startP; to: 0; duration: root.dur(Math.max(30, root.th.chipFallMs * lc.startP)); easing.type: Easing.InCubic
+                    NumberAnimation on p { from: lc.startP; to: 0; duration: root.fdur(Math.max(30, root.th.chipFallMs * lc.startP)); easing.type: Easing.InCubic
                         onFinished: Qt.callLater(() => root.dropLeaving(lc.uid)) }
                     readonly property var pl: root.lay[petal]
                     readonly property real spawnA: pl ? pl.mid : root.baseMid(petal)

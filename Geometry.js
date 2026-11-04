@@ -8,44 +8,23 @@ var TAU = Math.PI * 2
 function wrap(a) { a = (a + Math.PI) % TAU; if (a < 0) a += TAU; return a - Math.PI }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
-// Choose the arc the petals occupy. Full circle if the bloom fits around the
-// hub, otherwise the widest contiguous run of angles that stays on screen, so
-// the bloom flips toward the screen centre instead of being displaced.
-function arcFor(hx, hy, W, H, n, T) {
-    var need = Math.min(TAU, n * T.minPetalAngle)
-    var radii = [T.fitRadius, T.fitRadius * 0.82, T.fitRadius * 0.66]
-    var best = null
-    for (var ri = 0; ri < radii.length; ri++) {
-        var R = radii[ri], N = 360, ok = []
-        var any = false, all = true
-        for (var i = 0; i < N; i++) {
-            var a = i / N * TAU - Math.PI
-            var x = hx + R * Math.cos(a), y = hy + R * Math.sin(a)
-            var fits = x >= T.edgeMargin && x <= W - T.edgeMargin && y >= T.edgeMargin && y <= H - T.edgeMargin
-            ok.push(fits); if (fits) any = true; else all = false
-        }
-        var res
-        if (all) res = { full: true, start: -Math.PI / 2, span: TAU, dir: 1 }
-        else if (!any) res = { full: true, start: -Math.PI / 2, span: TAU, dir: 1 }
-        else {
-            // widest circular run
-            var s0 = ok.indexOf(false), bestLen = 0, bestStart = 0, len = 0, start = 0
-            for (var k = 1; k <= N; k++) {
-                var idx = (s0 + k) % N
-                if (ok[idx]) { if (len === 0) start = idx; len++; if (len > bestLen) { bestLen = len; bestStart = start } }
-                else len = 0
-            }
-            var a0 = bestStart / N * TAU - Math.PI
-            var span = bestLen / N * TAU
-            var mid = a0 + span / 2
-            // read left-to-right: lower-half arcs run counter-clockwise
-            var dir = Math.sin(mid) > 0.2 ? -1 : 1
-            res = { full: false, start: dir > 0 ? a0 : a0 + span, span: span, dir: dir }
-        }
-        best = res
-        if (res.span >= need - 1e-6) break
+// The ring is always a complete circle: no edge fan / flip / partial arc. `rot` turns the whole ring (see ringRotation).
+function fullArc(rot) { return { full: true, start: -Math.PI / 2 + (rot || 0), span: TAU, dir: 1 } }
+
+// Ring scale: grows only when so many petals would be narrower than minPetalAngle.
+function ringScale(n, T) { return Math.max(1, Math.min(T.maxScale, n * T.minPetalAngle / TAU)) }
+
+// Outer radius the whole bloom can reach (grown petal incl. hover growth, plus the drift of the dial).
+function ringExtent(n, T) { return T.outerR * ringScale(n, T) + T.hoverGrow + (T.driftMax || 0) }
+
+// Hub position that keeps the WHOLE bloom (well + ring incl. hover growth) on screen inside margin m: the pointer
+// position (cx, cy) is clamped inward by `ext` + m (centred on that axis if the screen is smaller than the bloom).
+function hubClamp(cx, cy, ext, W, H, m) {
+    var lo = ext + m
+    return {
+        x: W < 2 * lo ? W / 2 : clamp(cx, lo, W - lo),
+        y: H < 2 * lo ? H / 2 : clamp(cy, lo, H - lo)
     }
-    return best
 }
 
 // Returns [{a0,a1,mid,ri,ro,mag}] in absolute angles; a0<a1 when dir>0,
@@ -175,6 +154,53 @@ function cardPlace(cx, cy, R, ang, w, h, gap, W, H, m) {
         if (!best || clear > best.clear) best = cand
     }
     return best
+}
+
+// Distance from rect (x,y,w,h) to the outer arc (radius R) of the wedge a0..a1 around (cx, cy), sampled every ~0.5 deg.
+function arcGap(cx, cy, R, a0, a1, x, y, w, h) {
+    var best = Infinity, n = Math.max(2, Math.ceil((a1 - a0) / (0.5 * Math.PI / 180)))
+    for (var i = 0; i <= n; i++) {
+        var a = a0 + (a1 - a0) * i / n
+        var px = cx + R * Math.cos(a), py = cy + R * Math.sin(a)
+        var d = Math.hypot(px - clamp(px, x, x + w), py - clamp(py, y, y + h))
+        if (d < best) best = d
+    }
+    return best
+}
+// Card centred on one axis angle, pushed out until it clears R + gap, slid inside the margin. Returns {x,y,clear,gap}
+// where gap = distance from the card to the gear petal's outer arc (wedge a0..a1 at radius R).
+function cardOnAxis(cx, cy, R, ang, a0, a1, w, h, gap, W, H, m) {
+    var want = R + gap, ux = Math.cos(ang), uy = Math.sin(ang)
+    var lo = 0, hi = want + Math.hypot(w, h)
+    for (var it = 0; it < 48; it++) {
+        var t = (lo + hi) / 2
+        if (rectClearance(cx, cy, cx + ux * t - w / 2, cy + uy * t - h / 2, w, h) >= want) hi = t; else lo = t
+    }
+    var x = clamp(cx + ux * hi - w / 2, m, Math.max(m, W - w - m)), y = clamp(cy + uy * hi - h / 2, m, Math.max(m, H - h - m))
+    return { x: x, y: y, clear: rectClearance(cx, cy, x, y, w, h), gap: arcGap(cx, cy, R, a0, a1, x, y, w, h) }
+}
+// Ring rotation (rad) that turns the whole ring just far enough that the Settings (last) petal has room for its card
+// right beside its outer edge: the card must fit on screen on the petal's own axis, clear the ring by `gap`, and end
+// up within `gap` (+ tol) of the petal's outer arc. Smallest |rotation| wins; of two equal ones, the card closer to the
+// screen centre. 0 when the nominal position already works (or nothing works).
+function ringRotation(hx, hy, n, R, w, h, gap, W, H, m, tol) {
+    tol = tol === undefined ? 0.75 : tol
+    var b = TAU / n, step = 2 * Math.PI / 180
+    function ok(rot) {
+        var mid = -Math.PI / 2 + rot + (n - 0.5) * b
+        var p = cardOnAxis(hx, hy, R, mid, mid - b / 2, mid + b / 2, w, h, gap, W, H, m)
+        return p.clear >= R + gap - 1e-6 && p.gap <= gap + tol ? p : null
+    }
+    if (ok(0)) return 0
+    for (var k = 1; k * step <= Math.PI + 1e-9; k++) {
+        var cand = []
+        for (var sg = -1; sg <= 1; sg += 2) {
+            var p = ok(sg * k * step)
+            if (p) cand.push({ rot: sg * k * step, d: Math.hypot(p.x + w / 2 - W / 2, p.y + h / 2 - H / 2) })
+        }
+        if (cand.length) { cand.sort(function (a, c) { return a.d - c.d }); return cand[0].rot }
+    }
+    return 0
 }
 
 // Open arc path (for rails / edge highlight) between two angles.

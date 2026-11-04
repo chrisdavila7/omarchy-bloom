@@ -104,6 +104,26 @@ for (const { n, breaks } of cases) {
       }
     }
   }
+  { // mirrored branch: force a column whose centre-facing side is too tight (direction pointing at the near edge)
+    const GAP = 10, M = 12, w = 206
+    for (const [dir, px] of [[1, 1240], [-1, 40]]) {
+      const L = Object.assign({}, c.column(px, 400, 7, 0, W, H, T, [6]), { direction: dir }), i = 6
+      const p = c.cardPlace(L, i, w, ch, GAP, W, H, M)
+      ok(p.side === -dir, `mirrored side taken (dir ${dir})`)
+      ok(p.x >= M && p.x + w <= W - M, 'mirrored card on screen')
+      ok(p.x + w <= L.x - T.hoverGrow || p.x >= L.x + L.width + T.hoverGrow, 'mirrored card clear of the column')
+      const gapPx = dir > 0 ? L.x - (p.x + w) : p.x - (L.x + L.width)
+      ok(Math.abs(gapPx - GAP) < 1e-9, `mirrored card keeps cardGap (${gapPx})`)
+    }
+  }
+  // measured card-to-slot gap on the real (centre) side, all corners / edges / centre
+  { let worst = 0
+    for (const [px, py] of [[640, 400], [4, 4], [1276, 4], [4, 796], [1276, 796], [640, 2], [640, 798], [2, 400], [1278, 400]]) for (const { n: cnt, breaks } of cases) {
+      const L = c.column(px, py, cnt, 0, W, H, T, breaks), p = c.cardPlace(L, cnt - 1, 207, ch, GAP, W, H, M)
+      const g2 = p.side > 0 ? p.x - (L.x + L.width) : L.x - (p.x + 207); worst = Math.max(worst, Math.abs(g2 - GAP))
+      ok(Math.abs(g2 - GAP) < 1e-9, `card gap ${g2} @${px},${py}`)
+    }
+    console.log('vertical card gap deviates from cardGap by at most ' + worst.toFixed(3) + ' px') }
   console.log(`column card placement: ${n} cases (${same} toward centre, ${other} mirrored)`)
 }
 console.log(`column geometry: ${checks} checks, ${layouts} layouts, 0 failures`)
