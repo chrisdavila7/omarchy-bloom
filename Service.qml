@@ -207,12 +207,12 @@ Item {
         // radius (innerR * ring scale) minus wellGap, so it keeps the same hairline from the petals at any scale.
         readonly property real wellGap: 2          // px between the well rim and the petals' inner edge (= gap)
         readonly property real wellFillAlpha: 0.22 // faint fill; kept above the blur ignore_alpha (0.2) so the well frosts like the glass
-        readonly property color wellFillColor: "#6a6a6a" // lighter than the smoked glass: the well reads airy/emptier than the petals, the inner shadow keeps it recessed
+        readonly property color wellFillColor: "#7a7a7a" // lighter than the smoked glass: the well reads airy/emptier than the petals, the inner shadow keeps it recessed
         // glass seams: the hairline gaps (2 px) are filled with this near-black so they are blurred (alpha > ignore_alpha) and
         // read as deliberate glass seams over any wallpaper, instead of bright unblurred cracks
         readonly property real seamAlpha: 0.32
         readonly property real seamBleed: 0.4      // px the seam wedge overlaps the petal's arcs, so even-odd edges never coincide (no dotted fringe)
-        readonly property real wellShadowAlpha: 0.30 // inner shadow darkness at the very upper rim
+        readonly property real wellShadowAlpha: 0.20 // inner shadow darkness at the very upper rim
         readonly property real wellShadowStart: 0.74 // radial position where the shadow begins (0..1): a thin crescent at the upper rim, fading quickly
         readonly property real wellShadowOffsetK: 0.16 // shadow gradient centre sits this fraction of the well radius below the centre (light from above)
         readonly property real wellLipAlpha: 0.07  // faint light lip on the lower inner rim
@@ -276,7 +276,7 @@ Item {
         // current workspace = accent tick at the middle of the outer edge
         readonly property real tickLen: 11          // px along the arc
         readonly property real tickWidth: 2.5
-        readonly property real tickInset: 4.5       // px inside the outer edge (to the tick's centre line)
+        readonly property real tickInset: 6.0       // px inside the outer edge (to the tick's centre line); clear of the rim catch (0.6 + 2.4 px)
         readonly property real tickAlpha: 0.95
         readonly property real membraneAlpha: 0.34
         readonly property real chipAlpha: 0.84
@@ -336,7 +336,7 @@ Item {
         readonly property int colPressMs: 160
         readonly property int colEmptyMs: 140      // empty slots (opacity 0.5) fade over this
         readonly property real colEmptyAlpha: 0.5
-        readonly property real colTickInset: 4.5
+        readonly property real colTickInset: 6.0
         readonly property real chipRowPitch: 42    // vertical step of wrapped chip rows
         readonly property int chipMaxCols: 8       // widest chip row
         readonly property real bandPad: 3          // glass band overhang beyond the outer chips
@@ -353,8 +353,6 @@ Item {
         readonly property real cardRadius: 12
         readonly property real cardGap: 10         // gap between the Settings item (petal outer edge / slot edge) and the card
         readonly property real cardMargin: 12      // card stays this far inside the screen
-        readonly property real cardW: 212          // card size used to decide the ring rotation (the card measures 207 x 76)
-        readonly property real cardH: 76
         readonly property real cardAlpha: 0.86
         readonly property real cardScale0: 0.96    // scale it grows from
         readonly property int cardInMs: 160        // OutCubic
@@ -548,9 +546,8 @@ Item {
     property bool toastShown: false
 
     // ------------------------------------------------------------- geometry
-    // always a complete ring; it is turned just far enough (ringRot) that the Settings petal has room for its card beside it
-    readonly property real ringRot: G.ringRotation(bhx, bhy, count, th.outerR * ringK, th.cardW, th.cardH, th.cardGap, sw, sh, th.cardMargin)
-    readonly property var arc: G.fullArc(ringRot)
+    // always a complete ring at a fixed orientation (workspace 1 at 12 o'clock, Settings last): it never rotates
+    readonly property var arc: G.fullArc()
     readonly property real ringK: G.ringScale(count, th)
     readonly property var lay: G.layout(count, arc, th, ringK)
     // vertical layout: items = workspaces, then Settings. The full rail is centered at open.
@@ -1185,7 +1182,8 @@ Item {
                     readonly property string wcls: settings || nwin === 0 ? "" : (root.wsApp[String(wid)] || "")
                     readonly property bool isCurrent: !settings && wid === root.currentWs
                     readonly property real prog: root.petalProg(index, root.clock)
-                    readonly property bool isHover: root.hovered === index
+                    // the Settings petal stays in its hovered state (grown, rim catch) while its card is open
+                    readonly property bool isHover: root.hovered === index || (settings && root.settingsOpen)
                     property real hov: isHover ? 1 : 0
                     property real cur: isCurrent ? 1 : 0
                     property real occ: (settings || nwin > 0) ? 1 : 0
@@ -1467,7 +1465,7 @@ Item {
                     readonly property string wcls: special || nwin === 0 ? "" : (root.wsApp[String(wid)] || "")
                     readonly property bool isCurrent: !special && wid === root.currentWs
                     readonly property real prog: root.petalProg(index, root.clock)
-                    readonly property bool isHover: root.hovered === index
+                    readonly property bool isHover: root.hovered === index || (special && root.settingsOpen)
                     property real hov: isHover ? 1 : 0
                     property real cur: isCurrent ? 1 : 0
                     property real occ: (special || nwin > 0) ? 1 : 0
@@ -1971,11 +1969,11 @@ Item {
                 return Qt.point(g.x, g.y)
             }
             readonly property var sp: root.lay[root.settingsIndex]
-            // placement (Geometry.js cardPlace / ColumnGeometry.js cardPlace): attached to the Settings item with a
-            // cardGap, on-screen and never over the ring / column
+            // placement (Geometry.js cardPlace / ColumnGeometry.js cardPlace): bloom = adjacent to the ring (cardGap beyond
+            // its outer edge incl. hover growth) at the on-screen angle nearest the gear petal; vertical = beside the column
             readonly property var place: root.vert
                 ? CG.cardPlace(root.colLay, root.settingsIndex, w, h, root.th.cardGap, root.sw, root.sh, root.th.cardMargin)
-                : G.cardPlace(root.hx + root.driftX, root.hy + root.driftY, (sp ? sp.ro : root.th.outerR * root.ringK), sp ? sp.mid : -Math.PI / 2,
+                : G.cardPlace(root.hx + root.driftX, root.hy + root.driftY, (sp ? sp.roH : root.th.outerR * root.ringK + root.th.hoverGrow), sp ? sp.mid : -Math.PI / 2,
                               w, h, root.th.cardGap, root.sw, root.sh, root.th.cardMargin)
             x: place.x
             y: place.y

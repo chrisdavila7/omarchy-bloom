@@ -1,7 +1,7 @@
 // node test_geometry.js  -- polar hit-testing vs drawn wedges, fixed spans + edge-flip
 const fs = require('fs'), path = require('path'), vm = require('vm')
 const src = fs.readFileSync(path.join(__dirname, '../Geometry.js'), 'utf8').replace(/^\.pragma.*$/m, '')
-const G = {}; vm.runInNewContext(src + ';this.G={fullArc,ringScale,ringExtent,hubClamp,ringRotation,cardOnAxis,arcGap,layout,petalAt,drawnIndexAt,petalPath,seamPath,cardPlace,rectClearance,chipSlots,chipHit,wrap}', G)
+const G = {}; vm.runInNewContext(src + ';this.G={fullArc,ringScale,ringExtent,hubClamp,arcGap,layout,petalAt,drawnIndexAt,petalPath,seamPath,cardPlace,rectClearance,chipSlots,chipHit,wrap}', G)
 const g = G.G
 const T = { innerR: 40, outerR: 92, hoverGrow: 6, maxScale: 1.7, hitSlop: 4, minPetalAngle: 0.42, driftMax: 3,
             edgeMargin: 8, chipSize: 34, chipGap: 6, chipMaxSpanDeg: 150, chipRowStep: 44, chipEdgeGap: 7, railWidth: 40 }
@@ -45,12 +45,13 @@ for (const n of [6, 7, 8, 9, 12, 16]) for (const [name, [x, y]] of Object.entrie
     ok(g.petalAt(r, aim, n, arc, T, K) === i, `${name} n=${n} petalAt centre ${i}`)
     ok(g.drawnIndexAt(r, aim, lay, T) === i, `${name} n=${n} s=${strength} drawn wedge at centre ${i}`)
   }
-  // hit testing follows the clamped hub: a pointer placed on petal i's centre (relative to the hub) hits i, whatever the rotation
-  for (const rot of [0, 0.7, -2.1]) {
-    const a2 = g.fullArc(rot), l2 = g.layout(n, a2, T, K)
+  // hit testing follows the clamped hub: a pointer placed on petal i's centre (relative to the hub) hits i; the orientation is fixed
+  { const a2 = g.fullArc(), l2 = g.layout(n, a2, T, K)
+    ok(a2.start === -Math.PI / 2 && a2.span === Math.PI * 2 && a2.dir === 1, 'ring orientation fixed: workspace 1 at 12 o\'clock')
     for (let i = 0; i < n; i++) {
       const r = (T.innerR + T.outerR) / 2 * K, mid = l2[i].mid, ptx = hx + r * Math.cos(mid), pty = hy + r * Math.sin(mid)
-      ok(g.petalAt(Math.hypot(ptx - hx, pty - hy), Math.atan2(pty - hy, ptx - hx), n, a2, T, K) === i, `${name} n=${n} rot=${rot} hit petal ${i}`)
+      ok(Math.abs(mid - (-Math.PI / 2 + (i + 0.5) * Math.PI * 2 / n)) < 1e-9, `${name} n=${n} petal ${i} at its fixed angle`)
+      ok(g.petalAt(Math.hypot(ptx - hx, pty - hy), Math.atan2(pty - hy, ptx - hx), n, a2, T, K) === i, `${name} n=${n} hit petal ${i}`)
     }
   }
 }
@@ -163,40 +164,50 @@ for (const p of lay) { const d = g.petalPath(100, 100, p.ri, p.ro, p.a0, p.a1, 2
   ok(g.seamPath(0, 0, 40, 90, 1, 1, 8) === '', 'seamPath zero span -> empty')
 }
 
-// ---- settings card placement + ring rotation -------------------------------------------------------------
+// ---- settings card placement (ring never rotates) -------------------------------------------------------
 {
-  const cw = [207, 240], ch = 76, GAP = 10, M = 12, CWEST = 212
+  const cw = [207, 240], ch = 76, GAP = 10, M = 12
   const spots2 = Object.assign({}, spots, { edgeTop: [640, 30], edgeLeft: [30, 400], edgeRight: [1250, 400], edgeBottom: [640, 770], nearTL: [60, 60], nearBR: [1220, 740], nearTR: [1210, 90], nearBL: [80, 720] })
-  let n = 0, rotated = 0, maxGap = 0, maxRot = 0
-  for (const w of cw) for (const [name, [x0, y0]] of Object.entries(spots2)) for (const cnt of [6, 7, 8, 9, 11]) {
-    const [hx, hy] = hubFor(x0, y0, cnt), K = g.ringScale(cnt, T), R = T.outerR * K
-    const rot = g.ringRotation(hx, hy, cnt, R, w, ch, GAP, W, H, M)
-    const lay = g.layout(cnt, g.fullArc(rot), T, K), sp = lay[cnt - 1]
+  const pos = Object.entries(spots2).map(([k, v]) => [k, v[0], v[1]])
+  for (let x = 4; x <= 1276; x += 64) for (let y = 4; y <= 796; y += 64) pos.push([`grid${x},${y}`, x, y])
+  for (const x of [0, 2, 1278, 1280]) for (const y of [0, 2, 400, 798, 800]) pos.push([`border${x},${y}`, x, y])
+  let n = 0, onAxis = 0, off = 0, worstAng = 0, minGap = 1e9, maxGap = 0, fb = 0
+  const mids = new Set()
+  for (const w of cw) for (const [name, x0, y0] of pos) for (const cnt of [6, 7, 8, 9, 11]) {
+    const [hx, hy] = hubFor(x0, y0, cnt), K = g.ringScale(cnt, T), R = T.outerR * K + T.hoverGrow
+    const lay = g.layout(cnt, g.fullArc(), T, K), sp = lay[cnt - 1]
+    mids.add(cnt + ':' + sp.mid.toFixed(9))
     const p = g.cardPlace(hx, hy, R, sp.mid, w, ch, GAP, W, H, M)
-    const tag = `${name} n=${cnt} w=${w} rot=${(rot * 180 / Math.PI).toFixed(0)}`
-    n++; if (rot !== 0) rotated++; maxRot = Math.max(maxRot, Math.abs(rot))
+    const tag = `${name} n=${cnt} w=${w}`
+    n++
+    if (!p.fits) { fb++; continue }
     ok(p.x >= M - 1e-9 && p.y >= M - 1e-9 && p.x + w <= W - M + 1e-9 && p.y + ch <= H - M + 1e-9, `card on screen ${tag}`)
-    ok(g.rectClearance(hx, hy, p.x, p.y, w, ch) >= R + T.hoverGrow, `card clear of ring incl. hover growth ${tag}`)
-    ok(p.index === 0, `card on the gear's own axis ${tag} (index ${p.index})`)
-    // measured: distance from the card to the gear petal's outer arc is cardGap (+ sliding tolerance), in EVERY position
-    const gp = g.arcGap(hx, hy, sp.ro, sp.a0, sp.a1, p.x, p.y, w, ch)
-    maxGap = Math.max(maxGap, gp)
-    ok(gp <= GAP + 1.0 && gp >= GAP - 1e-6 - 0.01, `card gap to the gear petal ${gp.toFixed(2)} (want ${GAP}) ${tag}`)
-    // drift of the dial (+-3 px) never makes the card touch the ring
+    const clr = g.rectClearance(hx, hy, p.x, p.y, w, ch)
+    ok(clr >= R + GAP - 1e-6 && clr <= R + GAP + 1e-6, `card exactly cardGap from the ring incl. hover growth ${tag} (${clr})`)
+    minGap = Math.min(minGap, clr - R); maxGap = Math.max(maxGap, clr - R)
     ok(g.rectClearance(hx + 3, hy + 3, p.x, p.y, w, ch) >= R + GAP - 4.3, `card clear under drift ${tag}`)
+    // angle: the gear's own axis when it fits there; always the closest fitting angle (1 deg resolution)
+    const dA = Math.abs(Math.atan2(Math.sin(p.ang - sp.mid), Math.cos(p.ang - sp.mid)))
+    worstAng = Math.max(worstAng, dA)
+    if (dA < 1e-9) onAxis++; else off++
+    // independent check: no closer angle (1 deg steps) has a fully on-screen card at cardGap from the ring
+    for (let k = 0; k * Math.PI / 180 < dA - 1.01 * Math.PI / 180; k++) for (const sg of [-1, 1]) {
+      const a = sp.mid + sg * k * Math.PI / 180, ux = Math.cos(a), uy = Math.sin(a)
+      let lo = 0, hi = R + GAP + 300; for (let i = 0; i < 50; i++) { const m = (lo + hi) / 2; if (g.rectClearance(hx, hy, hx + ux * m - w / 2, hy + uy * m - ch / 2, w, ch) >= R + GAP) hi = m; else lo = m }
+      const x = hx + ux * hi - w / 2, y = hy + uy * hi - ch / 2
+      ok(!(x >= M && y >= M && x + w <= W - M && y + ch <= H - M), `a closer angle fits but was not chosen ${tag}`)
+    }
   }
-  { // open centre: no rotation, the card sits exactly cardGap beyond the gear petal's outer edge, centred on the axis
-    const [hx, hy] = [640, 400], K = g.ringScale(6, T), R = T.outerR * K, w = 207
-    const rot = g.ringRotation(hx, hy, 6, R, CWEST, ch, GAP, W, H, M); ok(rot === 0, 'centre: no rotation')
-    const mid = g.fullArc(0).start + 5.5 * Math.PI * 2 / 6
-    const p = g.cardPlace(hx, hy, R, mid, w, ch, GAP, W, H, M)
-    ok(p.index === 0 && Math.abs(g.rectClearance(hx, hy, p.x, p.y, w, ch) - (R + GAP)) < 1e-6, 'centre: gap to the gear petal = cardGap')
-    ok(Math.abs((p.x + w / 2 - hx) * Math.sin(mid) - (p.y + ch / 2 - hy) * Math.cos(mid)) < 1e-6, 'centre: card centred on the gear axis') }
-  { // top-right corner: the gear is turned toward the screen centre
-    const [hx, hy] = hubFor(1268, 12, 7), K = g.ringScale(7, T)
-    const rot = g.ringRotation(hx, hy, 7, T.outerR * K, CWEST, ch, GAP, W, H, M)
-    const gm = -Math.PI / 2 + rot + 6.5 * 2 * Math.PI / 7
-    ok(rot !== 0 && Math.cos(gm) < 0 && Math.sin(gm) > -0.5, 'top-right: gear turned toward the screen centre') }
-  console.log(`card placement: ${n} cases, ${rotated} with a rotated ring (max ${(maxRot * 180 / Math.PI).toFixed(0)} deg), worst card-to-gear gap ${maxGap.toFixed(2)} px`)
+  ok(mids.size === 5, 'gear petal angle identical in every position (one per ring size)')
+  { // open centre: the card sits on the gear's own axis, cardGap beyond the grown petal, centred on it
+    const [hx, hy] = [640, 400], K = g.ringScale(6, T), R = T.outerR * K + T.hoverGrow, mid = -Math.PI / 2 + 5.5 * Math.PI * 2 / 6
+    const p = g.cardPlace(hx, hy, R, mid, 207, ch, GAP, W, H, M)
+    ok(Math.abs(p.ang - mid) < 1e-9 && Math.abs(g.rectClearance(hx, hy, p.x, p.y, 207, ch) - (R + GAP)) < 1e-6, 'centre: gear axis, cardGap')
+    ok(Math.abs((p.x + 207 / 2 - hx) * Math.sin(mid) - (p.y + ch / 2 - hy) * Math.cos(mid)) < 1e-6, 'centre: card centred on the gear axis') }
+  { // tie: a gear straight up at the top edge has equal angles either side; the card goes to the side nearer the screen centre
+    const hx = 300, hy = 110, R = 98 + 6
+    const pl = g.cardPlace(hx, hy, R, -Math.PI / 2, 207, ch, GAP, W, H, M), pr = g.cardPlace(1280 - hx, hy, R, -Math.PI / 2, 207, ch, GAP, W, H, M)
+    ok(pl.x + 103 > hx && pr.x + 103 < 1280 - hx, 'tie goes toward the screen centre (mirror symmetric)') }
+  console.log(`card placement: ${n} cases (${n - fb} placed, ${fb} fallback), ${onAxis} on the gear's axis, ${off} moved around the ring (max ${(worstAng * 180 / Math.PI).toFixed(0)} deg), gap to ring ${minGap.toFixed(3)}..${maxGap.toFixed(3)} (want ${GAP})`)
 }
 console.log(`${checks} checks, ${fails} failures`); process.exit(fails ? 1 : 0)

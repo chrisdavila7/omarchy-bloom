@@ -8,8 +8,9 @@ var TAU = Math.PI * 2
 function wrap(a) { a = (a + Math.PI) % TAU; if (a < 0) a += TAU; return a - Math.PI }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
-// The ring is always a complete circle: no edge fan / flip / partial arc. `rot` turns the whole ring (see ringRotation).
-function fullArc(rot) { return { full: true, start: -Math.PI / 2 + (rot || 0), span: TAU, dir: 1 } }
+// The ring is always a complete circle at a FIXED orientation: workspace 1 starts at 12 o'clock, the Settings petal is
+// always the last slot, whatever the pointer position (muscle memory). No edge fan / flip / partial arc / rotation.
+function fullArc() { return { full: true, start: -Math.PI / 2, span: TAU, dir: 1 } }
 
 // Ring scale: grows only when so many petals would be narrower than minPetalAngle.
 function ringScale(n, T) { return Math.max(1, Math.min(T.maxScale, n * T.minPetalAngle / TAU)) }
@@ -125,35 +126,37 @@ function seamPath(cx, cy, ri, ro, a0, a1, cr) {
 }
 
 
-// Settings card placement (bloom). The card (w x h) attaches to the Settings petal: its centre sits on the petal's
-// outward axis, pushed out just far enough that the card's nearest edge/corner is exactly `gap` from the ring's outer
-// radius R (so the gap to the petal is cardGap whatever the axis angle). If that spot is off screen or would touch the
-// ring after sliding it inside the margin `m`, the mirrored axis is tried, then axes fanned around the ring (nearest
-// first). The first candidate whose clearance to the ring disc (centre cx,cy) is at least R + gap wins; otherwise the
-// one with the largest clearance.
+// Settings card placement (bloom). The ring never rotates, so the card goes where there is room: candidates all
+// around the ring (every 1 deg), each pushed out along its own angle until the card's nearest edge/corner is exactly
+// `gap` from the ring's outer edge R (pass R = resting outer radius + hover growth), so it never touches the ring.
+// Only candidates fully on screen (inside margin m) count. Winner: the one whose angle is closest to the Settings
+// petal's angle `ang`; ties (the two sides of the axis) go to the one nearer the screen centre. If nothing fits
+// (screen smaller than ring + card) the old behaviour applies: slide into the margin, keep the largest clearance.
 function rectClearance(cx, cy, x, y, w, h) {
     var nx = clamp(cx, x, x + w), ny = clamp(cy, y, y + h)
     return Math.hypot(cx - nx, cy - ny)
 }
 function cardPlace(cx, cy, R, ang, w, h, gap, W, H, m) {
-    var cands = [ang, ang + Math.PI]
-    for (var k = 1; k <= 23; k++) { cands.push(ang + k * Math.PI / 24); cands.push(ang - k * Math.PI / 24) }
-    var best = null, want = R + gap
-    for (var i = 0; i < cands.length; i++) {
-        var a = cands[i], ux = Math.cos(a), uy = Math.sin(a)
+    var want = R + gap, best = null, fb = null
+    for (var k = 0; k < 360; k++) {
+        var a = ang + wrap(k * Math.PI / 180), ux = Math.cos(a), uy = Math.sin(a)
         var lo = 0, hi = want + Math.hypot(w, h)
         for (var it = 0; it < 48; it++) {
             var t = (lo + hi) / 2
             if (rectClearance(cx, cy, cx + ux * t - w / 2, cy + uy * t - h / 2, w, h) >= want) hi = t; else lo = t
         }
         var x = cx + ux * hi - w / 2, y = cy + uy * hi - h / 2
-        x = clamp(x, m, Math.max(m, W - w - m)); y = clamp(y, m, Math.max(m, H - h - m))
-        var clear = rectClearance(cx, cy, x, y, w, h)
-        var cand = { x: x, y: y, clear: clear, ang: a, index: i }
-        if (clear >= want - 1e-6) return cand
-        if (!best || clear > best.clear) best = cand
+        var dA = Math.abs(wrap(a - ang)), dC = Math.hypot(x + w / 2 - W / 2, y + h / 2 - H / 2)
+        if (x >= m - 1e-9 && y >= m - 1e-9 && x + w <= W - m + 1e-9 && y + h <= H - m + 1e-9) {
+            if (!best || dA < best.dAng - 1e-9 || (Math.abs(dA - best.dAng) <= 1e-9 && dC < best.dC))
+                best = { x: x, y: y, clear: rectClearance(cx, cy, x, y, w, h), ang: a, dAng: dA, dC: dC, fits: true }
+        } else if (!best) {
+            var sx = clamp(x, m, Math.max(m, W - w - m)), sy = clamp(y, m, Math.max(m, H - h - m))
+            var cl = rectClearance(cx, cy, sx, sy, w, h)
+            if (!fb || cl > fb.clear + 1e-9) fb = { x: sx, y: sy, clear: cl, ang: a, dAng: dA, dC: dC, fits: false }
+        }
     }
-    return best
+    return best || fb
 }
 
 // Distance from rect (x,y,w,h) to the outer arc (radius R) of the wedge a0..a1 around (cx, cy), sampled every ~0.5 deg.
@@ -167,42 +170,6 @@ function arcGap(cx, cy, R, a0, a1, x, y, w, h) {
     }
     return best
 }
-// Card centred on one axis angle, pushed out until it clears R + gap, slid inside the margin. Returns {x,y,clear,gap}
-// where gap = distance from the card to the gear petal's outer arc (wedge a0..a1 at radius R).
-function cardOnAxis(cx, cy, R, ang, a0, a1, w, h, gap, W, H, m) {
-    var want = R + gap, ux = Math.cos(ang), uy = Math.sin(ang)
-    var lo = 0, hi = want + Math.hypot(w, h)
-    for (var it = 0; it < 48; it++) {
-        var t = (lo + hi) / 2
-        if (rectClearance(cx, cy, cx + ux * t - w / 2, cy + uy * t - h / 2, w, h) >= want) hi = t; else lo = t
-    }
-    var x = clamp(cx + ux * hi - w / 2, m, Math.max(m, W - w - m)), y = clamp(cy + uy * hi - h / 2, m, Math.max(m, H - h - m))
-    return { x: x, y: y, clear: rectClearance(cx, cy, x, y, w, h), gap: arcGap(cx, cy, R, a0, a1, x, y, w, h) }
-}
-// Ring rotation (rad) that turns the whole ring just far enough that the Settings (last) petal has room for its card
-// right beside its outer edge: the card must fit on screen on the petal's own axis, clear the ring by `gap`, and end
-// up within `gap` (+ tol) of the petal's outer arc. Smallest |rotation| wins; of two equal ones, the card closer to the
-// screen centre. 0 when the nominal position already works (or nothing works).
-function ringRotation(hx, hy, n, R, w, h, gap, W, H, m, tol) {
-    tol = tol === undefined ? 0.75 : tol
-    var b = TAU / n, step = 2 * Math.PI / 180
-    function ok(rot) {
-        var mid = -Math.PI / 2 + rot + (n - 0.5) * b
-        var p = cardOnAxis(hx, hy, R, mid, mid - b / 2, mid + b / 2, w, h, gap, W, H, m)
-        return p.clear >= R + gap - 1e-6 && p.gap <= gap + tol ? p : null
-    }
-    if (ok(0)) return 0
-    for (var k = 1; k * step <= Math.PI + 1e-9; k++) {
-        var cand = []
-        for (var sg = -1; sg <= 1; sg += 2) {
-            var p = ok(sg * k * step)
-            if (p) cand.push({ rot: sg * k * step, d: Math.hypot(p.x + w / 2 - W / 2, p.y + h / 2 - H / 2) })
-        }
-        if (cand.length) { cand.sort(function (a, c) { return a.d - c.d }); return cand[0].rot }
-    }
-    return 0
-}
-
 // Open arc path (for rails / edge highlight) between two angles.
 function arcPath(cx, cy, r, a0, a1) {
     if (a1 - a0 < 0.002) a1 = a0 + 0.002
