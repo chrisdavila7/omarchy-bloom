@@ -1,0 +1,83 @@
+// node test_column_geometry.js -- vertical layout geometry: slot positions, anchoring, clamping, hit-testing, chip rows
+const fs = require('fs'), vm = require('vm'), path = require('path'), assert = require('assert')
+const src = fs.readFileSync(path.join(__dirname, '../ColumnGeometry.js'), 'utf8').replace(/^\.pragma.*$/m, '')
+const ctx = {}; vm.runInNewContext(src + ';this.api={column,itemCenter,slotRect,hitTest,edgeX,spawnPoint,chipSlots,chipHit,inReveal}', ctx)
+const c = ctx.api
+const T = { slotSize: 40, slotGap: 3, slotHair: 2, separator: 8, edgeMargin: 8, hoverGrow: 6, chipSize: 34, chipGap: 6, railWidth: 40,
+            chipEdgeGap: 7, chipMaxCols: 8, chipRowPitch: 42, bandPad: 3, chipSpawnInset: 10 }
+let checks = 0
+const ok = (cond, msg) => { checks++; assert(cond, msg) }
+const W = 1280, H = 800
+// geometry of counts 6 (5 ws + Settings) .. 11, with/without a guest group (Settings slot follows a separator)
+const cases = []
+for (const n of [6, 7, 8, 10, 11]) for (const guest of [-1, 5]) cases.push({ n, breaks: guest >= 0 && guest < n - 1 ? [guest, n - 1] : [n - 1] })
+let layouts = 0
+for (const { n, breaks } of cases) {
+  // rail center under pointer when unclamped
+  for (let cur = 0; cur < n; cur++) {
+    const L0 = c.column(640, 400, n, cur, W, H, T, breaks)
+    const cc = { x: L0.x + L0.width / 2, y: L0.y + L0.height / 2 }
+    const unclamped = L0.y > T.edgeMargin + 1e-9 && L0.y + L0.height < H - T.edgeMargin - 1e-9
+    if (unclamped) { ok(Math.abs(cc.y - 400) < 1e-9, `rail ${cur}/${n} not under pointer`); ok(Math.abs(cc.x - 640) < 1e-9, 'x not under pointer') }
+  }
+  // spots: positions incl. corners and edges
+  for (const [px, py] of [[640, 400], [4, 4], [1276, 4], [4, 796], [1276, 796], [640, 2], [640, 798], [2, 400], [1278, 400], [100, 700], [1200, 100]]) {
+    for (const cur of [0, 2, n - 1]) {
+      const L = c.column(px, py, n, cur, W, H, T, breaks); layouts++
+      ok(L.x >= T.edgeMargin - 1e-9 && L.x + L.width <= W - T.edgeMargin + 1e-9, `x on screen ${px},${py}`)
+      ok(L.y >= T.edgeMargin - 1e-9 && L.y + L.height <= H - T.edgeMargin + 1e-9, `y on screen ${px},${py},n=${n}`)
+      ok(L.direction === (L.x + L.width / 2 <= W / 2 ? 1 : -1), 'direction toward centre')
+      // offsets monotone, spacing gap / separator
+      for (let i = 1; i < n; i++) {
+        const d = L.offsets[i] - L.offsets[i - 1] - T.slotSize
+        ok(Math.abs(d - (breaks.includes(i) ? T.separator : T.slotGap)) < 1e-9, `spacing at ${i}`)
+      }
+      // slot rects: no overlaps, hairline gaps of exactly slotHair inside groups
+      for (let i = 0; i < n; i++) {
+        const r = c.slotRect(L, i, T)
+        if (i > 0) { const q = c.slotRect(L, i - 1, T), gap = r.y - (q.y + q.h); ok(Math.abs(gap - (breaks.includes(i) ? T.separator : T.slotHair)) < 1e-9, `hairline ${i}: ${gap}`) }
+      }
+      // hit test: every slot centre, widened hover edge, outside misses, no dead strips along the centre line
+      for (let i = 0; i < n; i++) {
+        const ct = c.itemCenter(L, i)
+        ok(c.hitTest(L, ct.x, ct.y, -1, T) === i, `hit centre ${i}`)
+        ok(c.hitTest(L, ct.x, ct.y, i, T) === i, `hit centre hovered ${i}`)
+        const out = L.direction > 0 ? L.x + L.width + 3 : L.x - 3
+        ok(c.hitTest(L, out, ct.y, -1, T) === -1, `outside edge not hit ${i}`)
+        ok(c.hitTest(L, out, ct.y, i, T) === i, `widened slot hit ${i}`)
+        ok(c.hitTest(L, out, ct.y, i === 0 ? 1 : i - 1, T) === -1, 'neighbour does not widen this slot')
+        const far = L.direction > 0 ? L.x + L.width + T.hoverGrow + 1 : L.x - T.hoverGrow - 1
+        ok(c.hitTest(L, far, ct.y, i, T) === -1, 'beyond widened edge misses')
+      }
+      for (let y = L.y; y <= L.y + L.height; y += 0.5) ok(c.hitTest(L, L.x + L.width / 2, y, -1, T) >= 0, `dead strip at y=${y}`)
+      ok(c.hitTest(L, L.x + L.width / 2, L.y - 1, -1, T) === -1 && c.hitTest(L, L.x + L.width / 2, L.y + L.height + 1, -1, T) === -1, 'outside column')
+      // chips: rows on screen, centre-ward, no overlaps, hit-testable, band extents cover chips
+      for (const idx of [0, Math.min(2, n - 2), n - 2]) for (const cnt of [1, 3, 8, 9, 17, 40]) {
+        const S = c.chipSlots(L, idx, cnt, W, H, T)
+        ok(S.length === Math.min(cnt, S.length) && S.length > 0, 'slots exist')
+        if (!S.overflow) ok(S.length === cnt, `all chips placed ${cnt} got ${S.length}`)
+        const first = c.spawnPoint(L, idx, T)
+        for (let i = 0; i < S.length; i++) {
+          ok(S[i].x >= T.edgeMargin + 17 - 1e-6 && S[i].x <= W - T.edgeMargin - 17 + 1e-6, `chip x on screen ${S[i].x}`)
+          ok(S[i].y >= T.edgeMargin + 20 - 1e-6 && S[i].y <= H - T.edgeMargin - 20 + 1e-6, `chip y on screen ${S[i].y}`)
+          ok(L.direction > 0 ? S[i].x > L.x + L.width + T.hoverGrow : S[i].x < L.x - T.hoverGrow, 'chips beyond slot, toward centre')
+          ok(c.chipHit(S[i].x, S[i].y, S, 19) === i, 'chip hit')
+          ok(c.chipHit(S[i].x, S[i].y, S, 19, S.map(() => false)) === -1, 'not hittable until revealed')
+          for (let j = 0; j < i; j++) ok(Math.hypot(S[i].x - S[j].x, S[i].y - S[j].y) >= T.chipSize + T.chipGap - 1e-6 || Math.abs(S[i].y - S[j].y) >= T.chipRowPitch - 1e-6 , `chips overlap ${i},${j}`)
+          ok(S[i].inRow < T.chipMaxCols, 'row width cap')
+        }
+        // rows do not overlap each other vertically (bands) and stay on screen
+        for (let r = 0; r < S.rows.length; r++) {
+          ok(S.rows[r].y - T.railWidth / 2 >= T.edgeMargin - 1e-6 && S.rows[r].y + T.railWidth / 2 <= H - T.edgeMargin + 1e-6, 'band on screen')
+          ok(S.rows[r].x0 >= T.edgeMargin - 1e-6 && S.rows[r].x1 <= W - T.edgeMargin + 1e-6, 'band within screen x')
+          if (r > 0) ok(S.rows[r].y - S.rows[r - 1].y >= T.railWidth - 1e-6, 'bands do not overlap')
+        }
+        ok(c.inReveal(L, idx, S, S[0].x, S[0].y, 10, T), 'reveal covers chips')
+        ok(c.inReveal(L, idx, S, (L.direction > 0 ? L.x + L.width + T.hoverGrow + 3 : L.x - T.hoverGrow - 3), c.itemCenter(L, idx).y, 10, T), 'reveal covers corridor')
+        ok(!c.inReveal(L, idx, S, L.x + L.width / 2, L.y - 30, 10, T), 'reveal excludes far points')
+        ok(first && Math.abs(first.y - c.itemCenter(L, idx).y) < 1e-9, 'spawn on slot centre line')
+      }
+    }
+  }
+}
+console.log(`column geometry: ${checks} checks, ${layouts} layouts, 0 failures`)

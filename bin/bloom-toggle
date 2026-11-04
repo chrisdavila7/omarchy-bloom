@@ -1,0 +1,5 @@
+#!/bin/sh
+# Toggle Bloom through the running Omarchy shell.
+sh_bin=$(command -v omarchy-shell || true)
+[ -n "$sh_bin" ] || sh_bin=/usr/share/omarchy/bin/omarchy-shell
+exec "$sh_bin" io.github.chrisdavila7.bloom toggle

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.chrisdavila7.bloom",
+  "name": "Bloom",
+  "version": "1.0.0",
+  "description": "Radial or vertical mouse-first workspace switcher with drag-to-move windows.",
+  "author": "Bloom contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/chrisdavila7/omarchy-bloom",
+  "repository": "https://github.com/chrisdavila7/omarchy-bloom",
+  "kinds": ["service"],
+  "entryPoints": { "service": "Service.qml" }
+}
